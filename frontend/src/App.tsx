@@ -789,8 +789,10 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
     is_published: boolean
     is_demo: boolean
     is_public_without_code: boolean
-    calendar_background: 'navidad' | 'flores' | 'minimal'
+    calendar_background: 'navidad' | 'flores' | 'minimal' | 'custom'
     calendar_background_image: string
+    door_style: 'red' | 'ribbon' | 'gold' | 'custom'
+    door_image: string
   } | null>(null)
   const [dayDraft, setDayDraft] = useState({
     day_number: 1,
@@ -951,6 +953,8 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
       is_public_without_code: false,
       calendar_background: 'navidad',
       calendar_background_image: '',
+      door_style: 'red',
+      door_image: '',
     })
     setIsEditingCalendarTitle(false)
     setSelectedCalendarId(calendar.id)
@@ -1757,38 +1761,80 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
                           className="calendar-style-select"
                           value={calendarEditorDraft?.calendar_background ?? 'navidad'}
                           onChange={(event) => {
-                            const nextValue = event.target.value as 'navidad' | 'flores' | 'minimal'
+                            const nextValue = event.target.value as 'navidad' | 'flores' | 'minimal' | 'custom'
                             setCalendarEditorDraft((current) => current ? { ...current, calendar_background: nextValue } : current)
                           }}
                         >
                           <option value="navidad">{language === 'en' ? 'Christmas' : 'Navidad'}</option>
                           <option value="flores">{language === 'en' ? 'Flowers' : 'Flores'}</option>
                           <option value="minimal">{language === 'en' ? 'Minimal' : 'Minimal'}</option>
+                          <option value="custom">{language === 'en' ? 'Custom' : 'Personalizada'}</option>
                         </select>
                       </div>
 
-                      <div className="calendar-style-section">
-                        <label className="calendar-style-label" htmlFor="calendar-background-image-input">
-                          {language === 'en' ? 'Image background' : 'Imagen de fondo'}
-                        </label>
-                        <input
-                          id="calendar-background-image-input"
-                          type="file"
-                          accept="image/*"
-                          className="calendar-style-input"
-                          onChange={(event) => {
-                            const file = event.target.files?.[0]
-                            if (!file) return
+                      {calendarEditorDraft?.calendar_background === 'custom' ? (
+                        <div className="calendar-style-section">
+                          <input
+                            id="calendar-background-image-input"
+                            type="file"
+                            accept="image/*"
+                            className="calendar-style-input"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0]
+                              if (!file) return
 
-                            const reader = new FileReader()
-                            reader.onload = () => {
-                              const nextValue = typeof reader.result === 'string' ? reader.result : ''
-                              setCalendarEditorDraft((current) => current ? { ...current, calendar_background_image: nextValue } : current)
-                            }
-                            reader.readAsDataURL(file)
+                              const reader = new FileReader()
+                              reader.onload = () => {
+                                const nextValue = typeof reader.result === 'string' ? reader.result : ''
+                                setCalendarEditorDraft((current) => current ? { ...current, calendar_background_image: nextValue } : current)
+                              }
+                              reader.readAsDataURL(file)
+                            }}
+                          />
+                        </div>
+                      ) : null}
+
+                      <div className="calendar-style-section">
+                        <label className="calendar-style-label" htmlFor="door-style-select">
+                          {language === 'en' ? 'Door type' : 'Tipo de puerta'}
+                        </label>
+                        <select
+                          id="door-style-select"
+                          className="calendar-style-select"
+                          value={calendarEditorDraft?.door_style ?? 'red'}
+                          onChange={(event) => {
+                            const nextValue = event.target.value as 'red' | 'ribbon' | 'gold' | 'custom'
+                            setCalendarEditorDraft((current) => current ? { ...current, door_style: nextValue } : current)
                           }}
-                        />
+                        >
+                          <option value="red">{language === 'en' ? 'Red' : 'Rojo'}</option>
+                          <option value="ribbon">{language === 'en' ? 'Ribbon' : 'Lazos'}</option>
+                          <option value="gold">{language === 'en' ? 'Gold' : 'Dorado'}</option>
+                          <option value="custom">{language === 'en' ? 'Custom' : 'Personalizada'}</option>
+                        </select>
                       </div>
+
+                      {calendarEditorDraft?.door_style === 'custom' ? (
+                        <div className="calendar-style-section">
+                          <input
+                            id="door-image-input"
+                            type="file"
+                            accept="image/*"
+                            className="calendar-style-input"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0]
+                              if (!file) return
+
+                              const reader = new FileReader()
+                              reader.onload = () => {
+                                const nextValue = typeof reader.result === 'string' ? reader.result : ''
+                                setCalendarEditorDraft((current) => current ? { ...current, door_image: nextValue } : current)
+                              }
+                              reader.readAsDataURL(file)
+                            }}
+                          />
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>

@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
-import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { AlertTriangle, CalendarDays, CalendarHeart, Eye, EyeOff, Info, Link2, Lock, Mail, MessageSquareText, Pencil, Send, ShieldCheck, Sparkles, Unlock } from 'lucide-react'
+import { AlertTriangle, CalendarDays, CalendarHeart, Eye, EyeOff, Info, Link2, Lock, Mail, MessageSquareText, Pencil, Send, ShieldCheck, Sparkles } from 'lucide-react'
+
+type CustomLayoutBlock = {
+  day_number: number
+  x: number
+  y: number
+  w: number
+  h: number
+}
 
 type CalendarSummary = {
   id: number
@@ -12,6 +20,16 @@ type CalendarSummary = {
   duration_days: number
   is_published: boolean
   is_demo: boolean
+  password?: string | null
+  is_public_without_code?: boolean
+  calendar_background?: 'navidad' | 'flores' | 'minimal' | 'azul_mate' | 'verde_mate' | 'rojo_mate' | 'custom'
+  calendar_background_image?: string
+  custom_layout?: string | null
+  mosaic_scale?: number
+  door_style?: 'red' | 'ribbon' | 'gold' | 'custom'
+  door_image?: string
+  background_music?: MusicPresetKey
+  background_music_url?: string
 }
 
 type CalendarDay = {
@@ -36,6 +54,14 @@ type PublicCalendar = {
   theme: string
   duration_days: number
   is_published: boolean
+  calendar_background?: 'navidad' | 'flores' | 'minimal' | 'azul_mate' | 'verde_mate' | 'rojo_mate' | 'custom'
+  calendar_background_image?: string
+  custom_layout?: string | null
+  mosaic_scale?: number
+  door_style?: 'red' | 'ribbon' | 'gold' | 'custom'
+  door_image?: string
+  background_music?: MusicPresetKey
+  background_music_url?: string
 }
 
 type PublicDay = {
@@ -58,12 +84,356 @@ type CalendarReminder = {
   sent: boolean
 }
 
+type MusicPresetKey = 'none' | 'classic' | 'cozy' | 'lofi' | 'custom'
+
+const MUSIC_PRESETS: Record<Exclude<MusicPresetKey, 'none' | 'custom'>, string> = {
+  classic: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+  cozy: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
+  lofi: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
+}
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:8001'
 
 const generateAccessCode = () => {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
   const chars = Array.from({ length: 8 }, () => letters[Math.floor(Math.random() * letters.length)])
   return `ADV-${chars.join('')}`
+}
+
+export const resolveCalendarAccessState = (calendarPassword?: string | null, _isPublicWithoutCode?: boolean | null) => {
+  const password = (calendarPassword ?? '').trim()
+  return {
+    password,
+    isPublicWithoutCode: Boolean(_isPublicWithoutCode),
+  }
+}
+
+const getCalendarLayoutClassName = (theme?: string | null) => {
+  const normalized = (theme || 'puzzle').toLowerCase()
+  return normalized === 'puzzle' || normalized === 'mosaic' ? 'layout-puzzle' : 'layout-default'
+}
+
+const getCalendarBackgroundStyle = (background?: 'navidad' | 'flores' | 'minimal' | 'azul_mate' | 'verde_mate' | 'rojo_mate' | 'custom' | null, backgroundImage?: string | null) => {
+  if (background === 'custom' && backgroundImage) {
+    return { backgroundImage: `url(${backgroundImage})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }
+  }
+
+  if (background === 'navidad') {
+    return { backgroundImage: 'url(/fondo/navidad.avif)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }
+  }
+
+  if (background === 'flores') {
+    return { backgroundImage: 'url(/fondo/flores.avif)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }
+  }
+
+  if (background === 'minimal') {
+    return { backgroundImage: 'url(/fondo/minimal.jpg)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }
+  }
+
+  if (background === 'azul_mate') {
+    return { backgroundImage: 'url(/fondo/azul_mate.avif)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }
+  }
+
+  if (background === 'verde_mate') {
+    return { backgroundImage: 'url(/fondo/verde_mate.avif)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }
+  }
+
+  if (background === 'rojo_mate') {
+    return { backgroundImage: 'url(/fondo/rojo_mate.avif)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }
+  }
+
+  return { background: 'linear-gradient(135deg, #fff6df 0%, #fde2e2 48%, #e7f3ff 100%)' }
+}
+
+const getMosaicScaleStyle = (_scale?: number | null) => ({
+  transform: 'scale(1)',
+  transformOrigin: 'top left',
+  width: '100%',
+  transition: 'transform 0.2s ease',
+})
+
+const PUZZLE_DAY_LAYOUT: Record<number, { gridColumn: string; gridRow: string }> = {
+  1: { gridColumn: '3 / span 2', gridRow: '1' },
+  2: { gridColumn: '7', gridRow: '3' },
+  3: { gridColumn: '6', gridRow: '4 / span 2' },
+  4: { gridColumn: '3', gridRow: '2' },
+  5: { gridColumn: '1', gridRow: '4 / span 2' },
+  6: { gridColumn: '1', gridRow: '6 / span 2' },
+  7: { gridColumn: '2', gridRow: '1' },
+  8: { gridColumn: '3', gridRow: '5' },
+  9: { gridColumn: '6 / span 2', gridRow: '2' },
+  10: { gridColumn: '7', gridRow: '1' },
+  11: { gridColumn: '3 / span 2', gridRow: '4' },
+  12: { gridColumn: '4 / span 2', gridRow: '5' },
+  13: { gridColumn: '4 / span 2', gridRow: '2' },
+  14: { gridColumn: '5', gridRow: '4' },
+  15: { gridColumn: '1', gridRow: '1' },
+  16: { gridColumn: '2', gridRow: '4' },
+  17: { gridColumn: '3 / span 2', gridRow: '6' },
+  18: { gridColumn: '5 / span 2', gridRow: '3' },
+  19: { gridColumn: '2', gridRow: '5 / span 2' },
+  20: { gridColumn: '4', gridRow: '3' },
+  21: { gridColumn: '7', gridRow: '5 / span 2' },
+  22: { gridColumn: '5 / span 2', gridRow: '1' },
+  23: { gridColumn: '7', gridRow: '4' },
+  24: { gridColumn: '1 / span 2', gridRow: '2 / span 2' },
+  25: { gridColumn: '4 / span 2', gridRow: '7' },
+  26: { gridColumn: '5', gridRow: '6' },
+  27: { gridColumn: '3', gridRow: '3' },
+  28: { gridColumn: '2', gridRow: '7' },
+  29: { gridColumn: '3', gridRow: '7' },
+  30: { gridColumn: '7', gridRow: '7' },
+  31: { gridColumn: '6', gridRow: '6 / span 2' },
+}
+
+const buildPuzzleLayout = (totalDays: number): Record<number, { gridColumn: string; gridRow: string }> => {
+  const baseLayout = Object.fromEntries(
+    Object.entries(PUZZLE_DAY_LAYOUT).map(([day, value]) => [Number(day), value]),
+  ) as Record<number, { gridColumn: string; gridRow: string }>
+
+  if (totalDays === 31) {
+    return baseLayout
+  }
+
+  if (totalDays >= 24 && totalDays <= 30) {
+    const compactRangeLayout: Record<number, { gridColumn: string; gridRow: string }> = {
+      24: { gridColumn: '1 / span 2', gridRow: '1 / span 2' },
+      25: { gridColumn: '3', gridRow: '1' },
+      26: { gridColumn: '4', gridRow: '1' },
+      27: { gridColumn: '5', gridRow: '1' },
+      28: { gridColumn: '6', gridRow: '1' },
+      29: { gridColumn: '7', gridRow: '1' },
+      30: { gridColumn: '3', gridRow: '2' },
+    }
+
+    return compactRangeLayout
+  }
+
+  const layout: Record<number, { gridColumn: string; gridRow: string }> = {}
+  const allPatternRows: number[][] = [
+    [2, 2, 3],
+    [3, 2, 2],
+    [2, 3, 2],
+    [2, 2, 1, 2],
+    [1, 2, 2, 2],
+    [3, 1, 3],
+    [1, 3, 3],
+    [2, 1, 2, 2],
+  ]
+
+  const buildShuffledDays = () => {
+    const values = Array.from({ length: totalDays }, (_, index) => index + 1)
+
+    if (values.includes(24)) {
+      const twentyFourIndex = values.indexOf(24)
+      values.splice(twentyFourIndex, 1)
+    }
+
+    for (let index = values.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(((totalDays + index) % 97) / 97 * (index + 1))
+      const temp = values[index]
+      values[index] = values[swapIndex]
+      values[swapIndex] = temp
+    }
+
+    return values.filter((day) => day >= 1 && day <= totalDays)
+  }
+
+  const orderedDays = buildShuffledDays()
+  const rows = allPatternRows.slice(0, Math.ceil(totalDays / 3) + 2)
+  const fillRows: number[][] = []
+  let remaining = totalDays
+
+  while (remaining > 0) {
+    const nextPattern = rows[(remaining + totalDays) % rows.length]
+    fillRows.push(nextPattern)
+    remaining -= nextPattern.reduce((sum, value) => sum + value, 0)
+  }
+
+  const remainingDays = orderedDays.filter((day) => day !== 24)
+  const workingRows = fillRows.length > 0 ? fillRows : [[2, 2, 3]]
+
+  let slotCursor = 0
+  let rowCursor = 1
+  for (const pattern of workingRows) {
+    let columnCursor = 1
+    for (const span of pattern) {
+      if (slotCursor >= remainingDays.length) break
+      if (columnCursor === 1 && rowCursor === 1 && totalDays >= 24) {
+        columnCursor += 2
+        continue
+      }
+
+      layout[remainingDays[slotCursor]] = {
+        gridColumn: `${columnCursor} / span ${span}`,
+        gridRow: `${rowCursor}`,
+      }
+      slotCursor += 1
+      columnCursor += span
+    }
+    rowCursor += 1
+  }
+
+  return layout
+}
+
+const getPuzzleDayStyle = (dayNumber: number, totalDays: number = 31) => {
+  const layout = buildPuzzleLayout(totalDays)[dayNumber]
+  if (!layout) {
+    return undefined
+  }
+
+  return {
+    gridColumn: layout.gridColumn,
+    gridRow: layout.gridRow,
+  }
+}
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
+
+const blocksOverlap = (first: CustomLayoutBlock, second: CustomLayoutBlock) => (
+  first.x < second.x + second.w &&
+  first.x + first.w > second.x &&
+  first.y < second.y + second.h &&
+  first.y + first.h > second.y
+)
+
+const getCustomLayoutCandidate = (
+  blocks: CustomLayoutBlock[],
+  dayNumber: number,
+  nextBlock: CustomLayoutBlock,
+): CustomLayoutBlock | null => {
+  const target = {
+    ...nextBlock,
+    x: clamp(nextBlock.x, 0, 7 - nextBlock.w),
+    y: clamp(nextBlock.y, 0, 5 - nextBlock.h),
+    w: clamp(nextBlock.w, 1, 2),
+    h: clamp(nextBlock.h, 1, 2),
+  }
+
+  const collisions = blocks.filter((block) => block.day_number !== dayNumber && blocksOverlap(target, block))
+  if (collisions.length > 0) {
+    return null
+  }
+
+  return target
+}
+
+const buildDefaultCustomLayoutBlocks = (totalDays: number): CustomLayoutBlock[] => {
+  const stageColumns = 7
+  const stageRows = 5
+  const blocks: CustomLayoutBlock[] = []
+
+  for (let dayNumber = 1; dayNumber <= totalDays; dayNumber += 1) {
+    const columnIndex = (dayNumber - 1) % stageColumns
+    const rowIndex = Math.floor((dayNumber - 1) / stageColumns)
+    let x = columnIndex
+    let y = rowIndex
+    let w = 1
+    let h = 1
+
+    if (dayNumber === 24) {
+      x = 0
+      y = 1
+      w = 2
+      h = 2
+    } else if (dayNumber === 31) {
+      x = 4
+      y = 4
+      w = 2
+      h = 1
+    } else if (dayNumber % 7 === 0) {
+      w = 2
+    } else if (dayNumber % 5 === 0) {
+      h = 2
+    } else if (dayNumber % 3 === 0) {
+      x = clamp(columnIndex + (columnIndex >= stageColumns - 1 ? -1 : 0), 0, stageColumns - 1)
+      w = 2
+    }
+
+    if (x + w > stageColumns) {
+      x = clamp(stageColumns - w, 0, stageColumns - 1)
+    }
+    if (y + h > stageRows) {
+      y = clamp(stageRows - h, 0, stageRows - 1)
+    }
+
+    blocks.push({
+      day_number: dayNumber,
+      x,
+      y,
+      w,
+      h,
+    })
+  }
+
+  return blocks
+}
+
+const getCustomLayoutBlocks = (value?: string | null, totalDays = 31): CustomLayoutBlock[] => {
+  if (!value) {
+    return buildDefaultCustomLayoutBlocks(totalDays)
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown
+    const blocks = Array.isArray(parsed) ? parsed : []
+    if (blocks.length === 0) {
+      return buildDefaultCustomLayoutBlocks(totalDays)
+    }
+
+    const normalized = blocks
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null
+        const candidate = item as Partial<CustomLayoutBlock>
+        const dayNumber = Number(candidate.day_number)
+        if (!Number.isFinite(dayNumber) || dayNumber < 1 || dayNumber > totalDays) return null
+        const x = clamp(Number(candidate.x ?? 0), 0, 6)
+        const y = clamp(Number(candidate.y ?? 0), 0, 4)
+        const w = clamp(Number(candidate.w ?? 1), 1, 2)
+        const h = clamp(Number(candidate.h ?? 1), 1, 2)
+        return {
+          day_number: dayNumber,
+          x: clamp(x, 0, 7 - w),
+          y: clamp(y, 0, 5 - h),
+          w,
+          h,
+        }
+      })
+      .filter((item): item is CustomLayoutBlock => Boolean(item))
+
+    if (normalized.length === totalDays) {
+      return normalized
+    }
+
+    const fallback = buildDefaultCustomLayoutBlocks(totalDays)
+    const merged = new Map<number, CustomLayoutBlock>()
+    normalized.forEach((block) => merged.set(block.day_number, block))
+    fallback.forEach((block) => {
+      if (!merged.has(block.day_number)) {
+        merged.set(block.day_number, block)
+      }
+    })
+    return Array.from(merged.values()).sort((a, b) => a.day_number - b.day_number)
+  } catch {
+    return buildDefaultCustomLayoutBlocks(totalDays)
+  }
+}
+
+const getCustomLayoutStyle = (dayNumber: number, totalDays: number, layoutValue?: string | null) => {
+  const blocks = getCustomLayoutBlocks(layoutValue, totalDays)
+  const block = blocks.find((item) => item.day_number === dayNumber)
+  if (!block) {
+    return undefined
+  }
+
+  return {
+    position: 'absolute' as const,
+    left: `${(block.x / 7) * 100}%`,
+    top: `${(block.y / 5) * 100}%`,
+    width: `${(block.w / 7) * 100}%`,
+    height: `${(block.h / 5) * 100}%`,
+  }
 }
 
 const buildDayMetadata = (draft: {
@@ -193,7 +563,7 @@ function HomePage({ language, setLanguage }: { language: 'es' | 'en'; setLanguag
     ? {
         title: 'Design Advent calendars with personality.',
         lead: 'Manage content, open the demo or enter your calendar with a direct access code.',
-        actions: { panel: 'Dashboard', publicDemo: 'Public demo', myCalendar: 'My calendar' },
+        actions: { panel: 'Dashboard', demo: 'Demo', myCalendar: 'My calendar' },
         features: {
           customized: 'Custom calendars',
           access: 'Code access',
@@ -204,7 +574,7 @@ function HomePage({ language, setLanguage }: { language: 'es' | 'en'; setLanguag
     : {
         title: 'Diseña calendarios de Adviento con personalidad.',
         lead: 'Gestiona el contenido, abre la demo o entra a tu calendario con un código de acceso directo.',
-        actions: { panel: 'Panel', publicDemo: 'Demo pública', myCalendar: 'Mi calendario' },
+        actions: { panel: 'Panel', demo: 'Demo', myCalendar: 'Mi calendario' },
         features: {
           customized: 'Calendarios personalizados',
           access: 'Acceso con código',
@@ -225,8 +595,7 @@ function HomePage({ language, setLanguage }: { language: 'es' | 'en'; setLanguag
               {copy.translate}
             </button>
             <Link to="/admin" className="btn btn-primary btn-lg">{copy.actions.panel}</Link>
-            <Link to="/calendar" className="btn btn-outline-primary btn-lg">{copy.actions.publicDemo}</Link>
-            <Link to="/calendar/access" className="btn btn-outline-primary btn-lg">{copy.actions.myCalendar}</Link>
+            <Link to="/calendar/demo-ejemplo-publica" className="btn btn-primary btn-lg">{copy.actions.demo}</Link>
           </div>
         </div>
         <motion.div className="hero-card" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
@@ -265,62 +634,40 @@ function HomePage({ language, setLanguage }: { language: 'es' | 'en'; setLanguag
   )
 }
 
-function PublicEntryChooser({ language }: { language: 'es' | 'en' }) {
-  const copy = language === 'en'
-    ? {
-        title: 'Open a calendar',
-        subtitle: 'Choose how you want to access the public calendars.',
-        publishedByUsers: 'Published by users',
-        publicDemo: 'Public demo',
-        descriptionUsers: 'Enter your access code and open a personal calendar shared by a user.',
-        descriptionDemo: 'Preview the public demo calendars without needing a private link or code.',
-        back: 'Back',
-      }
-    : {
-        title: 'Abrir un calendario',
-        subtitle: 'Elige cómo quieres acceder a los calendarios públicos.',
-        publishedByUsers: 'Publicados por usuarios',
-        publicDemo: 'Demo pública',
-        descriptionUsers: 'Explora calendarios públicos compartidos por usuarios y accede sin crear una cuenta.',
-        descriptionDemo: 'Prueba ejemplos y muestras creadas por la web para ver cómo funciona.',
-        back: 'Volver',
-      }
-
-  return (
-    <div className="calendar-public-shell">
-      <div className="calendar-public-card demo-choice-card">
-        <p className="eyebrow">{language === 'en' ? 'Public access' : 'Acceso público'}</p>
-        <h1>{copy.title}</h1>
-        <p>{copy.subtitle}</p>
-
-        <div className="demo-choice-grid">
-          <Link to="/calendar/access" className="demo-choice-item">
-            <span className="demo-choice-badge">{copy.publishedByUsers}</span>
-            <strong>{language === 'en' ? 'Open a user calendar' : 'Abrir calendario de usuario'}</strong>
-            <small>{copy.descriptionUsers}</small>
-          </Link>
-
-          <Link to="/calendar/demo-publica" className="demo-choice-item demo-choice-item-secondary">
-            <span className="demo-choice-badge">{copy.publicDemo}</span>
-            <strong>{language === 'en' ? 'Explore demo calendars' : 'Explorar calendarios demo'}</strong>
-            <small>{copy.descriptionDemo}</small>
-          </Link>
-        </div>
-
-        <div className="mt-3">
-          <Link to="/" className="btn btn-outline-secondary">{copy.back}</Link>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function CalendarAccessPage({ language }: { language: 'es' | 'en' }) {
   const navigate = useNavigate()
-  const [accessCode, setAccessCode] = useState('')
-  const [email, setEmail] = useState('')
+  const storageKey = 'advent-calendar-access-flow'
+  const [accessCode, setAccessCode] = useState(() => {
+    try {
+      const raw = window.sessionStorage.getItem(storageKey)
+      if (!raw) return ''
+      const parsed = JSON.parse(raw) as { accessCode?: string }
+      return parsed.accessCode ?? ''
+    } catch {
+      return ''
+    }
+  })
+  const [email, setEmail] = useState(() => {
+    try {
+      const raw = window.sessionStorage.getItem(storageKey)
+      if (!raw) return ''
+      const parsed = JSON.parse(raw) as { email?: string }
+      return parsed.email ?? ''
+    } catch {
+      return ''
+    }
+  })
   const [error, setError] = useState('')
-  const [validatedSlug, setValidatedSlug] = useState<string | null>(null)
+  const [validatedSlug, setValidatedSlug] = useState<string | null>(() => {
+    try {
+      const raw = window.sessionStorage.getItem(storageKey)
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { validatedSlug?: string | null }
+      return parsed.validatedSlug ?? null
+    } catch {
+      return null
+    }
+  })
   const copy = language === 'en'
     ? {
         valid: 'Access valid',
@@ -355,6 +702,16 @@ function CalendarAccessPage({ language }: { language: 'es' | 'en' }) {
         saveEmailError: 'No se pudo guardar el correo',
       }
 
+  const persistFlowState = (next: { accessCode?: string; email?: string; validatedSlug?: string | null }) => {
+    try {
+      const current = JSON.parse(window.sessionStorage.getItem(storageKey) ?? '{}') as Record<string, unknown>
+      const merged = { ...current, ...next }
+      window.sessionStorage.setItem(storageKey, JSON.stringify(merged))
+    } catch {
+      // Ignore storage errors and keep the flow in memory only.
+    }
+  }
+
   const handleAccess = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     try {
@@ -369,7 +726,9 @@ function CalendarAccessPage({ language }: { language: 'es' | 'en' }) {
       })
 
       setError('')
-      setValidatedSlug(response.slug)
+      const targetSlug = response.slug
+      setValidatedSlug(targetSlug)
+      persistFlowState({ accessCode, email, validatedSlug: targetSlug })
     } catch (err) {
       setError(err instanceof Error ? err.message : copy.invalidCode)
     }
@@ -391,11 +750,28 @@ function CalendarAccessPage({ language }: { language: 'es' | 'en' }) {
         body: JSON.stringify({ email: cleanedEmail }),
       })
       setError('')
-      navigate(`/calendar/${validatedSlug}`)
+      persistFlowState({ accessCode, email: cleanedEmail, validatedSlug })
+      navigate(`/calendar/${validatedSlug}`, { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : copy.saveEmailError)
     }
   }
+
+  const clearFlowState = () => {
+    setValidatedSlug(null)
+    setAccessCode('')
+    setEmail('')
+    setError('')
+    try {
+      window.sessionStorage.removeItem(storageKey)
+    } catch {
+      // Ignore storage errors.
+    }
+  }
+
+  useEffect(() => {
+    persistFlowState({ accessCode, email, validatedSlug })
+  }, [accessCode, email, validatedSlug])
 
   if (validatedSlug) {
     return (
@@ -412,7 +788,7 @@ function CalendarAccessPage({ language }: { language: 'es' | 'en' }) {
           </form>
 
           <div className="mt-3">
-            <button type="button" className="btn btn-outline-secondary" onClick={() => setValidatedSlug(null)}>{copy.back}</button>
+            <button type="button" className="btn btn-outline-secondary" onClick={clearFlowState}>{copy.back}</button>
           </div>
         </div>
       </div>
@@ -433,7 +809,7 @@ function CalendarAccessPage({ language }: { language: 'es' | 'en' }) {
         </form>
 
         <div className="mt-3">
-          <Link to="/" className="btn btn-outline-secondary">{copy.back}</Link>
+          <button type="button" className="btn btn-outline-secondary" onClick={clearFlowState}>{copy.back}</button>
         </div>
       </div>
     </div>
@@ -442,6 +818,7 @@ function CalendarAccessPage({ language }: { language: 'es' | 'en' }) {
 
 function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLanguage: (value: 'es' | 'en') => void }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const adminCopy = language === 'en'
     ? {
         translate: 'ES',
@@ -473,8 +850,7 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
         calendarName: 'Calendar name',
         browserPath: 'Browser path (slug)',
         accessCode: 'Access code',
-        accessCodeHelper: 'The code/password is the same access gate. Turn the public-without-code switch on to keep it open without a code.',
-        publicWithoutCode: 'Public without code',
+        accessCodeHelper: 'The calendar is protected by a password. Enter the correct code to access it.',
         generate: 'Generate',
         duration: 'Duration (days)',
         quickDays: 'Quick days',
@@ -539,7 +915,7 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
         import: 'Importar',
         duplicate: 'Duplicar',
         delete: 'Eliminar',
-        view: 'Ver',
+        view: 'Ver contenido',
         edit: 'Editar',
         send: 'Enviar',
         cancel: 'Cancelar',
@@ -548,8 +924,7 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
         calendarName: 'Nombre del calendario',
         browserPath: 'Ruta del navegador (slug)',
         accessCode: 'Código de acceso',
-        accessCodeHelper: 'El código y la contraseña son lo mismo para entrar al calendario. Si quieres que sea público sin acceso con código, activa el interruptor de público sin código.',
-        publicWithoutCode: 'Público sin código',
+        accessCodeHelper: 'El calendario está protegido por una contraseña. Debe introducirse el código correcto para acceder.',
         generate: 'Generar',
         duration: 'Duración (días)',
         quickDays: 'Acceso rápido',
@@ -624,10 +999,11 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
     slug: 'nuevo-calendario',
     description: 'Un regalo especial para la familia.',
     password: generateAccessCode(),
-    theme: 'romantic',
+    theme: 'puzzle',
     duration_days: 12,
     is_published: false,
-    is_public_without_code: true,
+    is_public_without_code: false,
+    calendar_background: 'rojo_mate' as 'navidad' | 'flores' | 'minimal' | 'azul_mate' | 'verde_mate' | 'rojo_mate' | 'custom',
   })
   const [feedbackModal, setFeedbackModal] = useState<'suggestion' | 'report' | null>(null)
   const [feedbackStatus, setFeedbackStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -751,6 +1127,32 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
 
   const [selectedCalendarId, setSelectedCalendarId] = useState<number | null>(null)
   const [calendarDays, setCalendarDays] = useState<CalendarDay[]>([])
+  const lastSavedEditorDraftRef = useRef<string | null>(null)
+  const AUTOSAVE_DELAY_MS = 30000
+
+  const serializeEditorDraft = (draft: { name: string; slug: string; description: string; password: string; theme: string; duration_days: number; is_published: boolean; is_demo: boolean; is_public_without_code: boolean; calendar_background: 'navidad' | 'flores' | 'minimal' | 'azul_mate' | 'verde_mate' | 'rojo_mate' | 'custom'; calendar_background_image: string; custom_layout: string; mosaic_scale: number; door_style: 'red' | 'ribbon' | 'gold' | 'custom'; door_image: string; background_music: MusicPresetKey; background_music_url: string } | null) => {
+    if (!draft) return null
+
+    return JSON.stringify({
+      name: draft.name,
+      slug: draft.slug,
+      description: draft.description,
+      password: draft.password,
+      theme: draft.theme,
+      duration_days: draft.duration_days,
+      is_published: draft.is_published,
+      is_demo: draft.is_demo,
+      is_public_without_code: draft.is_public_without_code,
+      calendar_background: draft.calendar_background,
+      calendar_background_image: draft.calendar_background_image,
+      custom_layout: draft.custom_layout,
+      mosaic_scale: draft.mosaic_scale,
+      door_style: draft.door_style,
+      door_image: draft.door_image,
+      background_music: draft.background_music,
+      background_music_url: draft.background_music_url,
+    })
+  }
 
   const displayedCalendar = calendars[calendarCarouselIndex] ?? null
   const totalCalendarsLabel = `${calendars.length}`
@@ -789,11 +1191,26 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
     is_published: boolean
     is_demo: boolean
     is_public_without_code: boolean
-    calendar_background: 'navidad' | 'flores' | 'minimal' | 'custom'
+    calendar_background: 'navidad' | 'flores' | 'minimal' | 'azul_mate' | 'verde_mate' | 'rojo_mate' | 'custom'
     calendar_background_image: string
+    custom_layout: string
+    mosaic_scale: number
     door_style: 'red' | 'ribbon' | 'gold' | 'custom'
     door_image: string
+    background_music: MusicPresetKey
+    background_music_url: string
   } | null>(null)
+  const customLayoutBoardRef = useRef<HTMLDivElement | null>(null)
+  const customLayoutDragRef = useRef<{
+    dayNumber: number
+    mode: 'move' | 'resize'
+    startX: number
+    startY: number
+    initialBlock: CustomLayoutBlock
+    boardWidth: number
+    boardHeight: number
+  } | null>(null)
+
   const [dayDraft, setDayDraft] = useState({
     day_number: 1,
     title: 'Un detalle especial',
@@ -914,7 +1331,8 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
         body: JSON.stringify({
           ...newCalendar,
           is_published: false,
-          password: newCalendar.is_public_without_code ? '' : newCalendar.password,
+          password: newCalendar.password,
+          is_public_without_code: false,
           palette: { primary: '#7a1d39', secondary: '#f8d7d7', accent: '#d4af37' },
         }),
       })
@@ -926,7 +1344,8 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
         theme: 'romantic',
         duration_days: 12,
         is_published: false,
-        is_public_without_code: true,
+        is_public_without_code: false,
+        calendar_background: 'rojo_mate',
       })
       setIsCreateCalendarOpen(false)
       await loadCalendars()
@@ -939,22 +1358,27 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
   }
 
   const openCalendarEditor = async (calendar: CalendarSummary) => {
+    const { password } = resolveCalendarAccessState(calendar.password, calendar.is_public_without_code)
     setCalendarEditorId(calendar.id)
     setEditorSaveState('saved')
     setCalendarEditorDraft({
       name: calendar.name,
       slug: calendar.slug,
       description: calendar.description ?? '',
-      password: '',
-      theme: calendar.theme || 'romantic',
+      password,
+      theme: calendar.theme || 'puzzle',
       duration_days: calendar.duration_days,
       is_published: calendar.is_published,
       is_demo: calendar.is_demo,
       is_public_without_code: false,
-      calendar_background: 'navidad',
-      calendar_background_image: '',
-      door_style: 'red',
-      door_image: '',
+      calendar_background: calendar.calendar_background ?? 'rojo_mate',
+      calendar_background_image: calendar.calendar_background_image ?? '',
+      custom_layout: calendar.custom_layout ?? JSON.stringify(buildDefaultCustomLayoutBlocks(calendar.duration_days)),
+      mosaic_scale: calendar.mosaic_scale ?? 1,
+      door_style: calendar.door_style ?? 'red',
+      door_image: calendar.door_image ?? '',
+      background_music: calendar.background_music ?? 'none',
+      background_music_url: calendar.background_music_url ?? '',
     })
     setIsEditingCalendarTitle(false)
     setSelectedCalendarId(calendar.id)
@@ -969,48 +1393,343 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
     setIsEditingCalendarTitle(false)
   }
 
-  const openCalendarEditorShare = () => {
-    if (!calendarEditorId || !calendarEditorDraft) return
+  const handleCustomLayoutPointerDown = (event: React.PointerEvent<HTMLElement>, dayNumber: number, mode: 'move' | 'resize') => {
+    if (!calendarEditorDraft || mode === 'resize') return
 
-    const currentCalendar = calendars.find((item) => item.id === calendarEditorId) ?? {
-      id: calendarEditorId,
-      name: calendarEditorDraft.name || 'Calendario',
-      slug: calendarEditorDraft.slug,
-      description: calendarEditorDraft.description || null,
-      theme: calendarEditorDraft.theme,
-      duration_days: calendarEditorDraft.duration_days,
-      is_published: calendarEditorDraft.is_published,
-      is_demo: calendarEditorDraft.is_demo,
+    const boardElement = customLayoutBoardRef.current
+    if (!boardElement) return
+
+    const boardRect = boardElement.getBoundingClientRect()
+    const currentBlocks = getCustomLayoutBlocks(calendarEditorDraft.custom_layout, calendarEditorDraft.duration_days)
+    const currentBlock = currentBlocks.find((item) => item.day_number === dayNumber)
+    if (!currentBlock) return
+
+    customLayoutDragRef.current = {
+      dayNumber,
+      mode,
+      startX: event.clientX,
+      startY: event.clientY,
+      initialBlock: { ...currentBlock },
+      boardWidth: Math.max(boardRect.width, 1),
+      boardHeight: Math.max(boardRect.height, 1),
+    }
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const dragState = customLayoutDragRef.current
+      if (!dragState || !calendarEditorDraft) return
+
+      const offsetColumns = (event.clientX - dragState.startX) / dragState.boardWidth * 7
+      const offsetRows = (event.clientY - dragState.startY) / dragState.boardHeight * 5
+      const deltaX = Math.round(offsetColumns)
+      const deltaY = Math.round(offsetRows)
+
+      setCalendarEditorDraft((current) => {
+        if (!current) return current
+
+        const nextBlocks = getCustomLayoutBlocks(current.custom_layout, current.duration_days)
+        const currentBlock = nextBlocks.find((item) => item.day_number === dragState.dayNumber) ?? dragState.initialBlock
+
+        const updatedBlock = { ...currentBlock }
+        if (dragState.mode === 'move') {
+          updatedBlock.x = clamp(dragState.initialBlock.x + deltaX, 0, 7 - dragState.initialBlock.w)
+          updatedBlock.y = clamp(dragState.initialBlock.y + deltaY, 0, 5 - dragState.initialBlock.h)
+        } else {
+          updatedBlock.w = clamp(dragState.initialBlock.w + deltaX, 1, 7 - dragState.initialBlock.x)
+          updatedBlock.h = clamp(dragState.initialBlock.h + deltaY, 1, 5 - dragState.initialBlock.y)
+        }
+
+        const candidate = getCustomLayoutCandidate(
+          nextBlocks,
+          dragState.dayNumber,
+          updatedBlock,
+        )
+
+        if (!candidate) {
+          return current
+        }
+
+        const resolvedBlocks = nextBlocks.map((block) => block.day_number === dragState.dayNumber ? candidate : block)
+        return {
+          ...current,
+          custom_layout: JSON.stringify(resolvedBlocks),
+        }
+      })
     }
 
+    const handlePointerUp = () => {
+      customLayoutDragRef.current = null
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+  }, [calendarEditorDraft])
+
+  useEffect(() => {
+    if (!calendarEditorDraft || calendarEditorDraft.theme !== 'custom') {
+      customLayoutDragRef.current = null
+    }
+  }, [calendarEditorDraft])
+
+  useEffect(() => {
+    if (!calendarEditorDraft || calendarEditorDraft.theme !== 'custom') return
+
+    const hasLayout = Boolean(calendarEditorDraft.custom_layout)
+    if (!hasLayout) {
+      setCalendarEditorDraft((current) => current ? {
+        ...current,
+        custom_layout: JSON.stringify(buildDefaultCustomLayoutBlocks(current.duration_days)),
+      } : current)
+    }
+  }, [calendarEditorDraft])
+
+  useEffect(() => {
+    if (!calendarEditorDraft || calendarEditorDraft.theme !== 'custom') return
+
+    const blocks = getCustomLayoutBlocks(calendarEditorDraft.custom_layout, calendarEditorDraft.duration_days)
+    if (blocks.length !== calendarEditorDraft.duration_days) {
+      setCalendarEditorDraft((current) => current ? {
+        ...current,
+        custom_layout: JSON.stringify(buildDefaultCustomLayoutBlocks(current.duration_days)),
+      } : current)
+    }
+  }, [calendarEditorDraft])
+
+  useEffect(() => {
+    const routeState = location.state as { returnToEditor?: boolean; calendarId?: number; returnToRoute?: string } | null
+    if (!routeState?.returnToEditor || !routeState.calendarId) {
+      return
+    }
+
+    const targetCalendar = calendars.find((calendar) => calendar.id === routeState.calendarId)
+    if (!targetCalendar) {
+      return
+    }
+
+    void openCalendarEditor(targetCalendar)
+  }, [calendars, location.state])
+
+  const resolvePublicCalendarSlug = (calendarLike?: Pick<CalendarSummary, 'slug' | 'id'> | null) => {
+    if (!calendarLike) return null
+
+    const inEditor = calendarEditorId !== null && calendarEditorId === calendarLike.id && calendarEditorDraft
+    const draftSlug = inEditor ? calendarEditorDraft.slug.trim() : ''
+    const persistedSlug = (calendarLike.slug ?? '').trim()
+
+    if (draftSlug && inEditor) return draftSlug
+    if (persistedSlug) return persistedSlug
+    return null
+  }
+
+  const getCalendarPublicRoute = (calendarLike?: Pick<CalendarSummary, 'slug' | 'id'> | null) => {
+    const slug = resolvePublicCalendarSlug(calendarLike)
+    if (slug) {
+      return `/calendar/${slug}`
+    }
+
+    if (!calendarLike) return '/admin'
+    return `/admin/calendario/${calendarLike.id}`
+  }
+
+  const getCalendarPreviewTarget = async () => {
+    const currentCalendar = getEditorCalendarSnapshot() ?? (
+      calendarEditorId !== null
+        ? calendars.find((item) => item.id === calendarEditorId) ?? null
+        : selectedCalendarId !== null
+          ? calendars.find((item) => item.id === selectedCalendarId) ?? null
+          : null
+    )
+
+    if (!currentCalendar) return null
+
+    if (calendarEditorId !== null && calendarEditorId === currentCalendar.id && calendarEditorDraft) {
+      const savedCalendar = calendars.find((item) => item.id === calendarEditorId)
+      const draftSlug = (calendarEditorDraft.slug || '').trim()
+      const savedSlug = (savedCalendar?.slug || '').trim()
+      const hasDraftSlugChange = draftSlug.length > 0 && draftSlug !== savedSlug
+      const hasDraftContentChange = savedCalendar !== undefined && (
+        savedCalendar.name !== calendarEditorDraft.name ||
+        savedSlug !== draftSlug ||
+        (savedCalendar.description ?? '') !== (calendarEditorDraft.description ?? '') ||
+        (savedCalendar.theme ?? 'romantic') !== (calendarEditorDraft.theme ?? 'romantic') ||
+        (savedCalendar.duration_days ?? 24) !== (calendarEditorDraft.duration_days ?? 24) ||
+        savedCalendar.is_published !== calendarEditorDraft.is_published ||
+        (savedCalendar.calendar_background ?? 'rojo_mate') !== (calendarEditorDraft.calendar_background ?? 'rojo_mate') ||
+        (savedCalendar.calendar_background_image ?? '') !== (calendarEditorDraft.calendar_background_image ?? '') ||
+        (savedCalendar.custom_layout ?? '') !== (calendarEditorDraft.custom_layout ?? '') ||
+        (savedCalendar.mosaic_scale ?? 1) !== (calendarEditorDraft.mosaic_scale ?? 1) ||
+        (savedCalendar.door_style ?? 'red') !== (calendarEditorDraft.door_style ?? 'red') ||
+        (savedCalendar.door_image ?? '') !== (calendarEditorDraft.door_image ?? '') ||
+        (savedCalendar.background_music ?? 'none') !== (calendarEditorDraft.background_music ?? 'none') ||
+        (savedCalendar.background_music_url ?? '') !== (calendarEditorDraft.background_music_url ?? '')
+      )
+
+      if (hasDraftSlugChange || hasDraftContentChange) {
+        const updatedCalendar = await saveCalendarEditor({ ...calendarEditorDraft })
+        if (updatedCalendar) {
+          return {
+            ...currentCalendar,
+            ...updatedCalendar,
+            slug: updatedCalendar.slug.trim() || currentCalendar.slug,
+            name: updatedCalendar.name || currentCalendar.name,
+            description: updatedCalendar.description ?? currentCalendar.description ?? null,
+            theme: updatedCalendar.theme || currentCalendar.theme,
+            duration_days: updatedCalendar.duration_days || currentCalendar.duration_days,
+            is_published: updatedCalendar.is_published,
+            is_demo: updatedCalendar.is_demo,
+          } satisfies CalendarSummary
+        }
+      }
+    }
+
+    return getEditorCalendarSnapshot() ?? currentCalendar
+  }
+
+  const getPublicCalendarShareUrl = (calendarLike?: Pick<CalendarSummary, 'slug' | 'id'> | null) => {
+    const slug = resolvePublicCalendarSlug(calendarLike)
+    if (!slug) return null
+    return `${window.location.origin}/calendar/${slug}`
+  }
+
+  const getEditorCalendarSnapshot = () => {
+    if (!calendarEditorId || !calendarEditorDraft) return null
+
+    const existing = calendars.find((item) => item.id === calendarEditorId)
+    return {
+      ...(existing ?? {
+        id: calendarEditorId,
+        name: calendarEditorDraft.name || 'Calendario',
+        slug: calendarEditorDraft.slug,
+        description: calendarEditorDraft.description || null,
+        theme: calendarEditorDraft.theme || 'puzzle',
+        duration_days: calendarEditorDraft.duration_days,
+        is_published: calendarEditorDraft.is_published,
+        is_demo: calendarEditorDraft.is_demo,
+      }),
+      id: calendarEditorId,
+      name: calendarEditorDraft.name || existing?.name || 'Calendario',
+      slug: (calendarEditorDraft.slug || existing?.slug || '').trim(),
+      description: calendarEditorDraft.description || existing?.description || null,
+      theme: calendarEditorDraft.theme || existing?.theme || 'puzzle',
+      duration_days: Number.isFinite(calendarEditorDraft.duration_days) ? calendarEditorDraft.duration_days : (existing?.duration_days ?? 24),
+      is_published: calendarEditorDraft.is_published,
+      is_demo: calendarEditorDraft.is_demo ?? existing?.is_demo ?? false,
+      calendar_background: calendarEditorDraft.calendar_background ?? existing?.calendar_background ?? 'rojo_mate',
+      calendar_background_image: calendarEditorDraft.calendar_background_image || existing?.calendar_background_image || '',
+      custom_layout: calendarEditorDraft.custom_layout || existing?.custom_layout || JSON.stringify(buildDefaultCustomLayoutBlocks(calendarEditorDraft.duration_days)),
+      mosaic_scale: calendarEditorDraft.mosaic_scale ?? existing?.mosaic_scale ?? 1,
+      door_style: calendarEditorDraft.door_style ?? existing?.door_style ?? 'red',
+      door_image: calendarEditorDraft.door_image || existing?.door_image || '',
+      background_music: calendarEditorDraft.background_music ?? existing?.background_music ?? 'none',
+      background_music_url: calendarEditorDraft.background_music_url || existing?.background_music_url || '',
+    } satisfies CalendarSummary
+  }
+
+  const openCalendarEditorShare = () => {
+    const currentCalendar = getEditorCalendarSnapshot()
+    if (!currentCalendar) return
     openShareCalendarModal(currentCalendar)
   }
 
-  const saveCalendarEditor = async (draftOverride?: typeof calendarEditorDraft, closeAfterSave = false) => {
+  const saveCalendarEditor = async (draftOverride?: typeof calendarEditorDraft, closeAfterSave = false): Promise<CalendarSummary | null> => {
     const draft = draftOverride ?? calendarEditorDraft
-    if (!calendarEditorId || !draft) return
+    if (!calendarEditorId || !draft) return null
+
+    const normalizedPassword = (draft.password || '').trim()
+    const stabilizedDraft = {
+      ...draft,
+      password: normalizedPassword,
+      is_public_without_code: false,
+    }
+
+    const draftSignature = serializeEditorDraft(stabilizedDraft)
+    if (draftSignature === lastSavedEditorDraftRef.current) {
+      setEditorSaveState('saved')
+      return null
+    }
 
     setEditorSaveState('saving')
 
     try {
-      await request<CalendarSummary>(`${API_BASE}/api/calendars/${calendarEditorId}`, {
+      const updatedCalendar = await request<CalendarSummary>(`${API_BASE}/api/calendars/${calendarEditorId}`, {
         method: 'PUT',
         body: JSON.stringify({
-          ...draft,
-          password: draft.password || undefined,
+          ...stabilizedDraft,
+          is_public_without_code: false,
+          password: normalizedPassword || undefined,
           palette: { primary: '#7a1d39', secondary: '#f8d7d7', accent: '#d4af37' },
         }),
       })
+
+      setCalendars((current) => current.some((item) => item.id === calendarEditorId)
+        ? current.map((item) => (item.id === calendarEditorId ? { ...item, ...updatedCalendar } : item))
+        : [...current, updatedCalendar])
+
+      setCalendarEditorDraft((current) => current ? {
+        ...current,
+        name: updatedCalendar.name,
+        slug: updatedCalendar.slug,
+        description: updatedCalendar.description ?? '',
+        password: updatedCalendar.password ?? current.password ?? '',
+        is_public_without_code: false,
+        theme: updatedCalendar.theme,
+        duration_days: updatedCalendar.duration_days,
+        is_published: updatedCalendar.is_published,
+        is_demo: updatedCalendar.is_demo,
+        calendar_background: updatedCalendar.calendar_background ?? current.calendar_background,
+        calendar_background_image: updatedCalendar.calendar_background_image ?? current.calendar_background_image,
+        custom_layout: updatedCalendar.custom_layout ?? current.custom_layout ?? JSON.stringify(buildDefaultCustomLayoutBlocks(updatedCalendar.duration_days)),
+        mosaic_scale: updatedCalendar.mosaic_scale ?? current.mosaic_scale ?? 1,
+        door_style: updatedCalendar.door_style ?? current.door_style,
+        door_image: updatedCalendar.door_image ?? current.door_image,
+        background_music: updatedCalendar.background_music ?? current.background_music,
+        background_music_url: updatedCalendar.background_music_url ?? current.background_music_url,
+      } : current)
+
+      lastSavedEditorDraftRef.current = draftSignature
+
+      if (shareCalendar && shareCalendar.id === calendarEditorId) {
+        setShareCalendar((current) => current ? { ...current, ...updatedCalendar } : current)
+      }
+
       await loadCalendars()
       setEditorSaveState('saved')
       if (closeAfterSave) {
         closeCalendarEditor()
       }
+      return updatedCalendar
     } catch (err) {
       setEditorSaveState('saved')
       setError(err instanceof Error ? err.message : 'No se pudo guardar el calendario')
+      return null
     }
   }
+
+  useEffect(() => {
+    if (!calendarEditorId || !calendarEditorDraft) {
+      lastSavedEditorDraftRef.current = null
+      return
+    }
+
+    const currentDraftSignature = serializeEditorDraft(calendarEditorDraft)
+    if (currentDraftSignature === lastSavedEditorDraftRef.current) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      void saveCalendarEditor({ ...calendarEditorDraft })
+    }, AUTOSAVE_DELAY_MS)
+
+    return () => window.clearTimeout(timer)
+  }, [calendarEditorId, calendarEditorDraft])
 
   const handleDuplicate = async (calendarId: number) => {
     try {
@@ -1225,28 +1944,6 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
     setError('')
   }
 
-  const handleToggleDayLock = async (dayId: number, currentlyUnlocked: boolean) => {
-    if (!selectedCalendarId) return
-    try {
-      await request<{ message: string }>(`${API_BASE}/api/days/${dayId}/${currentlyUnlocked ? 'lock' : 'unlock'}`, {
-        method: 'POST',
-      })
-      await loadCalendarDetails(selectedCalendarId)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo cambiar el estado')
-    }
-  }
-
-  const handleDeleteDay = async (dayId: number) => {
-    if (!selectedCalendarId) return
-    try {
-      await request<{ message: string }>(`${API_BASE}/api/days/${dayId}`, { method: 'DELETE' })
-      await loadCalendarDetails(selectedCalendarId)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo eliminar la puerta')
-    }
-  }
-
   const handleSendReminderEmails = async (calendarId: number) => {
     try {
       const result = await request<{ count: number; message: string; emails: string[] }>(`${API_BASE}/api/calendars/${calendarId}/reminders/send`, {
@@ -1263,8 +1960,30 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
     }
   }
 
+  const persistEditorDraftIfDirty = async () => {
+    if (calendarEditorId === null || !calendarEditorDraft) return
+
+    const existing = calendars.find((item) => item.id === calendarEditorId)
+    if (!existing) return
+
+    const isDirty = (
+      existing.name !== calendarEditorDraft.name ||
+      existing.slug !== (calendarEditorDraft.slug || '').trim() ||
+      (existing.description ?? '') !== (calendarEditorDraft.description ?? '') ||
+      (existing.theme ?? 'romantic') !== (calendarEditorDraft.theme ?? 'romantic') ||
+      (existing.duration_days ?? 24) !== (calendarEditorDraft.duration_days ?? 24) ||
+      existing.is_published !== calendarEditorDraft.is_published ||
+      (existing.is_demo ?? false) !== (calendarEditorDraft.is_demo ?? false)
+    )
+
+    if (isDirty) {
+      await saveCalendarEditor({ ...calendarEditorDraft })
+    }
+  }
+
   const openShareCalendarModal = (calendar: CalendarSummary) => {
-    setShareCalendar(calendar)
+    const calendarSnapshot = calendarEditorId === calendar.id ? getEditorCalendarSnapshot() ?? calendar : calendar
+    setShareCalendar(calendarSnapshot)
     setShareDraft({
       name: '',
       text: 'Hola, este es un regalo para ti.',
@@ -1278,7 +1997,11 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
 
   const copyShareMessage = async () => {
     if (!shareCalendar) return
-    const shareUrl = `${window.location.origin}/calendar/${shareCalendar.slug}`
+    if (calendarEditorId === shareCalendar.id && calendarEditorDraft) {
+      await persistEditorDraftIfDirty()
+    }
+    const shareUrl = getPublicCalendarShareUrl(shareCalendar)
+    if (!shareUrl) return
     const greeting = shareDraft.name ? `Hola, ${shareDraft.name}` : 'Hola'
     const message = `${greeting}\n\n${shareDraft.text.trim() || 'Este es un regalo para ti.'}\n\n${shareUrl}`
     await copyToClipboard(message)
@@ -1449,19 +2172,11 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
                         onChange={(event) => setCalendarEditorDraft({ ...calendarEditorDraft, name: event.target.value })}
                         onBlur={() => {
                           setIsEditingCalendarTitle(false)
-                          if (calendarEditorDraft) {
-                            const nextDraft = { ...calendarEditorDraft }
-                            void saveCalendarEditor(nextDraft)
-                          }
                         }}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter') {
                             event.preventDefault()
                             setIsEditingCalendarTitle(false)
-                            if (calendarEditorDraft) {
-                              const nextDraft = { ...calendarEditorDraft }
-                              void saveCalendarEditor(nextDraft)
-                            }
                           }
                         }}
                         autoFocus
@@ -1479,8 +2194,8 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
                         <Link2 size={14} />
                         <span>Slug</span>
                       </button>
-                      <button type="button" className={`editor-inline-chip ${calendarEditorDraft.is_public_without_code ? 'success' : ''}`} onClick={() => setEditorSettingsModal('access')} title={calendarEditorDraft.is_public_without_code ? (language === 'en' ? 'Public access without code' : 'Acceso público sin código') : (language === 'en' ? 'Code access' : 'Acceso con código')} aria-label={calendarEditorDraft.is_public_without_code ? (language === 'en' ? 'Edit public access without code' : 'Editar acceso público sin código') : (language === 'en' ? 'Edit access settings' : 'Editar acceso con código')}>
-                        {calendarEditorDraft.is_public_without_code ? <Unlock size={14} /> : <Lock size={14} />}
+                      <button type="button" className="editor-inline-chip" onClick={() => setEditorSettingsModal('access')} title={language === 'en' ? 'Edit access settings' : 'Editar acceso con código'} aria-label={language === 'en' ? 'Edit access settings' : 'Editar acceso con código'}>
+                        <Lock size={14} />
                         <span>{language === 'en' ? 'Access' : 'Acceso'}</span>
                       </button>
                       <button type="button" className="editor-inline-chip" onClick={() => setEditorSettingsModal('days')} title={language === 'en' ? 'Edit number of days' : 'Editar número de días'} aria-label={language === 'en' ? 'Edit calendar day count' : 'Editar número de días del calendario'}>
@@ -1547,52 +2262,35 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
                       <label>
                 Slug
                         <input value={calendarEditorDraft.slug} onChange={(event) => {
-                          const nextDraft = { ...calendarEditorDraft, slug: event.target.value }
-                          setCalendarEditorDraft(nextDraft)
-                          void saveCalendarEditor(nextDraft)
+                          setCalendarEditorDraft({ ...calendarEditorDraft, slug: event.target.value })
                         }} placeholder={language === 'en' ? 'example-calendar' : 'ejemplo-calendario'} />
                       </label>
                     ) : null}
 
                     {editorSettingsModal === 'access' ? (
-                      <>
-                        <div className="d-flex gap-2 flex-wrap mb-3">
-                          <button type="button" className={`btn btn-sm ${!calendarEditorDraft.is_public_without_code ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => {
-                            const nextDraft = { ...calendarEditorDraft, is_public_without_code: false, password: calendarEditorDraft.password || generateAccessCode() }
-                            setCalendarEditorDraft(nextDraft)
-                            void saveCalendarEditor(nextDraft)
-                          }}>
-                    {language === 'en' ? 'With code' : 'Con código'}
-                          </button>
-                          <button type="button" className={`btn btn-sm ${calendarEditorDraft.is_public_without_code ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => {
-                            const nextDraft = { ...calendarEditorDraft, is_public_without_code: true, password: '' }
-                            setCalendarEditorDraft(nextDraft)
-                            void saveCalendarEditor(nextDraft)
-                          }}>
-                    {language === 'en' ? 'Public without code' : 'Público sin código'}
+                      <label>
+                        {language === 'en' ? 'Calendar password' : 'Contraseña del calendario'}
+                        <div className="d-flex gap-2 align-items-center">
+                          <div className="flex-grow-1">
+                            <PasswordInput
+                              value={calendarEditorDraft.password || ''}
+                              onChange={(event) => {
+                                setCalendarEditorDraft({ ...calendarEditorDraft, password: event.target.value })
+                              }}
+                              placeholder={language === 'en' ? 'Current password' : 'Contraseña actual'}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-secondary"
+                            onClick={() => {
+                              setCalendarEditorDraft({ ...calendarEditorDraft, is_public_without_code: false, password: generateAccessCode() })
+                            }}
+                          >
+                            {language === 'en' ? 'Generate' : 'Generar'}
                           </button>
                         </div>
-
-                        {!calendarEditorDraft.is_public_without_code ? (
-                          <label>
-                    {language === 'en' ? 'Calendar password' : 'Contraseña del calendario'}
-                            <div className="d-flex gap-2 align-items-center">
-                              <div className="flex-grow-1">
-                                <PasswordInput value={calendarEditorDraft.password} onChange={(event) => {
-                                  const nextDraft = { ...calendarEditorDraft, password: event.target.value }
-                                  setCalendarEditorDraft(nextDraft)
-                                  void saveCalendarEditor(nextDraft)
-                        }} placeholder={language === 'en' ? 'Leave empty to keep the current one' : 'Deja vacío para mantener la actual'} />
-                              </div>
-                              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => {
-                                const nextDraft = { ...calendarEditorDraft, password: generateAccessCode() }
-                                setCalendarEditorDraft(nextDraft)
-                                void saveCalendarEditor(nextDraft)
-                      }}>{language === 'en' ? 'Generate' : 'Generar'}</button>
-                            </div>
-                          </label>
-                        ) : null}
-                      </>
+                      </label>
                     ) : null}
 
                     {editorSettingsModal === 'details' ? (
@@ -1600,17 +2298,13 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
                         <label>
                   {language === 'en' ? 'Description' : 'Descripción'}
                           <textarea value={calendarEditorDraft.description} onChange={(event) => {
-                            const nextDraft = { ...calendarEditorDraft, description: event.target.value }
-                            setCalendarEditorDraft(nextDraft)
-                            void saveCalendarEditor(nextDraft)
+                            setCalendarEditorDraft({ ...calendarEditorDraft, description: event.target.value })
                           }} />
                         </label>
                         <label>
                   {language === 'en' ? 'Theme' : 'Tema'}
                           <select value={calendarEditorDraft.theme} onChange={(event) => {
-                            const nextDraft = { ...calendarEditorDraft, theme: event.target.value }
-                            setCalendarEditorDraft(nextDraft)
-                            void saveCalendarEditor(nextDraft)
+                            setCalendarEditorDraft({ ...calendarEditorDraft, theme: event.target.value })
                           }}>
                     <option value="romantic">{language === 'en' ? 'Romantic' : 'Romántico'}</option>
                     <option value="winter">{language === 'en' ? 'Winter' : 'Invierno'}</option>
@@ -1630,9 +2324,7 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
                               type="button"
                               className={`btn btn-sm ${calendarEditorDraft.duration_days === days ? 'btn-primary' : 'btn-outline-primary'}`}
                               onClick={() => {
-                                const nextDraft = { ...calendarEditorDraft, duration_days: days }
-                                setCalendarEditorDraft(nextDraft)
-                                void saveCalendarEditor(nextDraft)
+                                setCalendarEditorDraft({ ...calendarEditorDraft, duration_days: days })
                               }}
                             >
                       {days} {language === 'en' ? 'days' : 'días'}
@@ -1650,9 +2342,10 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
                               value={calendarEditorDraft.duration_days}
                               onChange={(event) => {
                                 const value = Number(event.target.value)
-                                const nextDraft = { ...calendarEditorDraft, duration_days: Number.isFinite(value) ? Math.max(1, Math.min(31, value)) : 1 }
-                                setCalendarEditorDraft(nextDraft)
-                                void saveCalendarEditor(nextDraft)
+                                setCalendarEditorDraft({
+                                  ...calendarEditorDraft,
+                                  duration_days: Number.isFinite(value) ? Math.max(1, Math.min(31, value)) : 1,
+                                })
                               }}
                             />
                       <button type="button" className="field-help-icon" onClick={() => setDayHelpModal(true)} aria-label={language === 'en' ? 'Help about calendar days' : 'Ayuda sobre días del calendario'}>
@@ -1710,13 +2403,45 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
 
             <div className="admin-form">
               <div className="calendar-editor-toolbar">
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-secondary editor-toggle-button"
-                  onClick={() => setIsDoorEditorPanelOpen((current) => !current)}
-                >
-                  {isDoorEditorPanelOpen ? (language === 'en' ? 'Hide editor' : 'Ocultar editor') : (language === 'en' ? 'Open editor' : 'Abrir editor')}
-                </button>
+                <div className="calendar-editor-toolbar-row">
+                  <div className="calendar-editor-toolbar-actions">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary editor-toggle-button"
+                      onClick={() => setIsDoorEditorPanelOpen((current) => !current)}
+                    >
+                      {isDoorEditorPanelOpen ? (language === 'en' ? 'Hide editor' : 'Ocultar editor') : (language === 'en' ? 'Open editor' : 'Abrir editor')}
+                    </button>
+                  </div>
+
+                  <div className="calendar-editor-toolbar-right">
+                    <div className="calendar-editor-hint">
+                      <span className="calendar-editor-hint-dot" />
+                      {language === 'en' ? 'Click each door to add or edit it.' : 'Pulsa cada puerta para añadirla o editarla.'}
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary editor-preview-button"
+                      onClick={async () => {
+                        const currentCalendar = await getCalendarPreviewTarget()
+                        if (!currentCalendar) return
+
+                        const targetUrl = getCalendarPublicRoute(currentCalendar)
+                        if (!targetUrl) return
+                        navigate(targetUrl, {
+                          state: {
+                            fromEditor: true,
+                            calendarId: currentCalendar.id,
+                            returnToEditor: true,
+                            returnToRoute: '/admin',
+                          },
+                        })
+                      }}
+                    >
+                      {language === 'en' ? 'Preview' : 'Vista previa'}
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div className={`calendar-editor-day-grid ${isDoorEditorPanelOpen ? 'panel-open' : 'panel-closed'}`}>
@@ -1734,21 +2459,23 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
                         <select
                           id="calendar-style-select"
                           className="calendar-style-select"
-                          value={calendarEditorDraft?.theme ?? 'week'}
+                          value={calendarEditorDraft?.theme ?? 'puzzle'}
                           onChange={(event) => {
                             const nextTheme = event.target.value
                             setCalendarEditorDraft((current) => {
                               if (!current) return current
 
-                              const presetDays = nextTheme === 'week' ? 7 : nextTheme === 'puzzle' ? 7 : 7
-
-                              return { ...current, theme: nextTheme, duration_days: presetDays }
+                              return {
+                                ...current,
+                                theme: nextTheme,
+                                duration_days: current.duration_days,
+                                custom_layout: current.custom_layout || JSON.stringify(buildDefaultCustomLayoutBlocks(current.duration_days)),
+                              }
                             })
                           }}
                         >
-                          <option value="week">{language === 'en' ? 'Default' : 'Por defecto'}</option>
-                          <option value="puzzle">Puzzle</option>
-                          <option value="custom">{language === 'en' ? 'Custom' : 'Personalizado'}</option>
+                          <option value="puzzle">{language === 'en' ? 'Puzzle / Mosaic' : 'Puzzle / Mosaico'}</option>
+                          <option value="week">{language === 'en' ? 'Default grid' : 'Cuadrícula por defecto'}</option>
                         </select>
                       </div>
 
@@ -1759,21 +2486,27 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
                         <select
                           id="calendar-background-select"
                           className="calendar-style-select"
-                          value={calendarEditorDraft?.calendar_background ?? 'navidad'}
+                          value={calendarEditorDraft?.calendar_background ?? 'rojo_mate'}
                           onChange={(event) => {
-                            const nextValue = event.target.value as 'navidad' | 'flores' | 'minimal' | 'custom'
+                            const nextValue = event.target.value as 'navidad' | 'flores' | 'minimal' | 'azul_mate' | 'verde_mate' | 'rojo_mate' | 'custom'
                             setCalendarEditorDraft((current) => current ? { ...current, calendar_background: nextValue } : current)
                           }}
                         >
                           <option value="navidad">{language === 'en' ? 'Christmas' : 'Navidad'}</option>
                           <option value="flores">{language === 'en' ? 'Flowers' : 'Flores'}</option>
                           <option value="minimal">{language === 'en' ? 'Minimal' : 'Minimal'}</option>
-                          <option value="custom">{language === 'en' ? 'Custom' : 'Personalizada'}</option>
+                          <option value="azul_mate">Azul mate</option>
+                          <option value="verde_mate">Verde mate</option>
+                          <option value="rojo_mate">Rojo mate</option>
+                          <option value="custom">{language === 'en' ? 'Custom background' : 'Personalizado'}</option>
                         </select>
                       </div>
 
                       {calendarEditorDraft?.calendar_background === 'custom' ? (
                         <div className="calendar-style-section">
+                          <label className="calendar-style-label" htmlFor="calendar-background-image-input">
+                            {language === 'en' ? 'Custom image' : 'Imagen personalizada'}
+                          </label>
                           <input
                             id="calendar-background-image-input"
                             type="file"
@@ -1793,26 +2526,6 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
                           />
                         </div>
                       ) : null}
-
-                      <div className="calendar-style-section">
-                        <label className="calendar-style-label" htmlFor="door-style-select">
-                          {language === 'en' ? 'Door type' : 'Tipo de puerta'}
-                        </label>
-                        <select
-                          id="door-style-select"
-                          className="calendar-style-select"
-                          value={calendarEditorDraft?.door_style ?? 'red'}
-                          onChange={(event) => {
-                            const nextValue = event.target.value as 'red' | 'ribbon' | 'gold' | 'custom'
-                            setCalendarEditorDraft((current) => current ? { ...current, door_style: nextValue } : current)
-                          }}
-                        >
-                          <option value="red">{language === 'en' ? 'Red' : 'Rojo'}</option>
-                          <option value="ribbon">{language === 'en' ? 'Ribbon' : 'Lazos'}</option>
-                          <option value="gold">{language === 'en' ? 'Gold' : 'Dorado'}</option>
-                          <option value="custom">{language === 'en' ? 'Custom' : 'Personalizada'}</option>
-                        </select>
-                      </div>
 
                       {calendarEditorDraft?.door_style === 'custom' ? (
                         <div className="calendar-style-section">
@@ -1839,39 +2552,57 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
                   ) : null}
                 </div>
 
-                <div className="glass-card p-3 day-editor-main-panel">
+                <div
+                  className="glass-card p-3 day-editor-main-panel"
+                  style={getCalendarBackgroundStyle(
+                    calendarEditorDraft?.calendar_background,
+                    calendarEditorDraft?.calendar_background_image,
+                  )}
+                >
                   <div className="d-flex justify-content-between align-items-center gap-3 mb-3">
                     <h4 className="mb-0">{language === 'en' ? 'Calendar' : 'Calendario'}</h4>
                   </div>
 
-                  <div className="door-slot-grid">
+                  <div
+                    ref={customLayoutBoardRef}
+                    className={`door-slot-grid ${calendarEditorDraft?.theme === 'puzzle' || calendarEditorDraft?.theme === 'mosaic' || calendarEditorDraft?.theme === 'custom' ? 'layout-puzzle' : 'layout-default'}`}
+                    style={
+                      calendarEditorDraft?.theme === 'puzzle' || calendarEditorDraft?.theme === 'mosaic' || calendarEditorDraft?.theme === 'custom'
+                        ? {
+                            position: 'relative',
+                            minHeight: '420px',
+                            overflow: 'hidden',
+                          }
+                        : undefined
+                    }
+                  >
                     {Array.from({ length: Math.max(1, calendarEditorDraft?.duration_days ?? 1) }, (_, index) => {
                       const dayNumber = index + 1
                       const existingDay = calendarDays.find((item) => item.day_number === dayNumber)
+                      const isPuzzleLayout = calendarEditorDraft?.theme === 'puzzle' || calendarEditorDraft?.theme === 'mosaic'
+                      const isCustomLayout = calendarEditorDraft?.theme === 'custom'
 
                       return (
                         <div
                           key={dayNumber}
                           className={`door-slot ${existingDay ? 'filled' : 'empty'} ${editingDayId === existingDay?.id ? 'active' : ''}`}
+                          style={
+                            isPuzzleLayout
+                              ? getPuzzleDayStyle(dayNumber, calendarEditorDraft?.duration_days ?? 1)
+                              : isCustomLayout
+                                ? {
+                                    ...getCustomLayoutStyle(dayNumber, calendarEditorDraft?.duration_days ?? 1, calendarEditorDraft?.custom_layout),
+                                    position: 'absolute',
+                                    cursor: 'grab',
+                                  }
+                                : undefined
+                          }
+                          onPointerDown={(event) => handleCustomLayoutPointerDown(event, dayNumber, 'move')}
                         >
                           <button type="button" className="door-slot-button" onClick={() => handleSelectDoorSlot(dayNumber, existingDay)}>
                             <span className="door-slot-number">{dayNumber}</span>
-                            <span className="door-slot-label">{existingDay ? (existingDay.title || 'Puerta creada') : 'Vacía'}</span>
+                            <span className="door-slot-label">{existingDay ? 'Editado' : 'Vacío'}</span>
                           </button>
-
-                          {existingDay ? (
-                            <div className="door-slot-actions" onClick={(event) => event.stopPropagation()}>
-                              <button type="button" className="btn btn-xs btn-outline-light" onClick={() => handleEditDay(existingDay)}>
-                                Editar
-                              </button>
-                              <button type="button" className="btn btn-xs btn-outline-light" onClick={() => handleToggleDayLock(existingDay.id, existingDay.is_unlocked_by_admin)}>
-                                {existingDay.is_unlocked_by_admin ? 'Bloquear' : 'Desbloquear'}
-                              </button>
-                              <button type="button" className="btn btn-xs btn-outline-light" onClick={() => handleDeleteDay(existingDay.id)}>
-                                Eliminar
-                              </button>
-                            </div>
-                          ) : null}
                         </div>
                       )
                     })}
@@ -2078,34 +2809,14 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
                     value={newCalendar.password}
                     onChange={(event) => setNewCalendar({ ...newCalendar, password: event.target.value })}
                     placeholder={language === 'en' ? 'Ex: ADV-ABCD1234' : 'Ej: ADV-ABCD1234'}
-                    disabled={newCalendar.is_public_without_code}
                   />
                   </div>
                   <button
                   type="button"
                   className="btn btn-sm btn-outline-secondary create-calendar-generate-button"
-                  disabled={newCalendar.is_public_without_code}
                   onClick={() => setNewCalendar({ ...newCalendar, password: generateAccessCode() })}
                   >
                   {adminCopy.generate}
-                  </button>
-                </div>
-                <div className="toggle-row">
-                  <span>{adminCopy.publicWithoutCode}</span>
-                  <button
-                    type="button"
-                    className={`toggle-switch ${newCalendar.is_public_without_code ? 'on' : ''}`}
-                    aria-label={language === 'en' ? 'Toggle public access without code' : 'Activar acceso público sin código'}
-                    onClick={() => {
-                      const nextPublicMode = !newCalendar.is_public_without_code
-                      setNewCalendar({
-                        ...newCalendar,
-                        is_public_without_code: nextPublicMode,
-                        password: nextPublicMode ? '' : newCalendar.password || generateAccessCode(),
-                      })
-                    }}
-                  >
-                    <span className="toggle-knob" />
                   </button>
                 </div>
                 <small className="form-help-text">{adminCopy.accessCodeHelper}</small>
@@ -2121,7 +2832,6 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
                           key={days}
                           type="button"
                           className={`quick-duration-button ${newCalendar.duration_days === days ? 'active' : ''}`}
-                          disabled={newCalendar.is_public_without_code}
                           onClick={() => setNewCalendar({ ...newCalendar, duration_days: days })}
                         >
                           {days}
@@ -2137,7 +2847,6 @@ function AdminPage({ language, setLanguage }: { language: 'es' | 'en'; setLangua
                     min={1}
                     max={31}
                     value={newCalendar.duration_days}
-                    disabled={newCalendar.is_public_without_code}
                     onChange={(event) => setNewCalendar({ ...newCalendar, duration_days: Number(event.target.value) })}
                   />
                 </label>
@@ -2545,7 +3254,7 @@ function AdminCalendarDetailPage({ language }: { language: 'es' | 'en' }) {
         failedOpen: 'Could not open the calendar',
         backToPanel: 'Back to panel',
         loading: 'Loading calendar…',
-        calendarView: 'Calendar view',
+        calendarView: 'Calendar view with content',
         noDescription: 'No description',
         published: 'Published',
         draft: 'Draft',
@@ -2567,7 +3276,7 @@ function AdminCalendarDetailPage({ language }: { language: 'es' | 'en' }) {
         failedOpen: 'No se pudo abrir',
         backToPanel: 'Volver al panel',
         loading: 'Cargando calendario…',
-        calendarView: 'Vista de calendario',
+        calendarView: 'Vista de calendario con contenidos',
         noDescription: 'Sin descripción',
         published: 'Publicado',
         draft: 'Borrador',
@@ -2616,6 +3325,8 @@ function AdminCalendarDetailPage({ language }: { language: 'es' | 'en' }) {
     void fetchCalendar()
   }, [calendarId, copy.invalid])
 
+  const backgroundStyle = getCalendarBackgroundStyle(calendar?.calendar_background, calendar?.calendar_background_image)
+
   if (isLoading) {
     return <RouteLoadingScreen language={language} />
   }
@@ -2643,7 +3354,7 @@ function AdminCalendarDetailPage({ language }: { language: 'es' | 'en' }) {
 
   return (
     <div className="calendar-public-shell">
-      <div className="calendar-public-card">
+      <div className="calendar-public-card" style={backgroundStyle}>
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
           <div>
             <p className="eyebrow">{copy.calendarView}</p>
@@ -2743,12 +3454,15 @@ function AdminCalendarDetailPage({ language }: { language: 'es' | 'en' }) {
 
 function PublicCalendarPage({ language }: { language: 'es' | 'en' }) {
   const { slug } = useParams<{ slug: string }>()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [calendar, setCalendar] = useState<PublicCalendar | null>(null)
   const [days, setDays] = useState<PublicDay[]>([])
   const [selectedDay, setSelectedDay] = useState<PublicDay | null>(null)
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [locked, setLocked] = useState(false)
+  const [notFound, setNotFound] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
   const copy = language === 'en'
@@ -2779,9 +3493,101 @@ function PublicCalendarPage({ language }: { language: 'es' | 'en' }) {
         incorrectPassword: 'Contraseña incorrecta',
       }
 
+  const backgroundStyle = getCalendarBackgroundStyle(calendar?.calendar_background, calendar?.calendar_background_image)
+
+  const doorsGridClassName = getCalendarLayoutClassName(calendar?.theme ?? 'puzzle')
+
+  const doorStyle = calendar?.door_style === 'custom' && calendar.door_image
+    ? { backgroundImage: `url(${calendar.door_image})`, backgroundSize: 'cover', backgroundPosition: 'center', color: '#fff' }
+    : calendar?.door_style === 'gold'
+      ? { background: 'linear-gradient(135deg, #8a6500 0%, #d6b14d 100%)' }
+      : calendar?.door_style === 'ribbon'
+        ? { background: 'linear-gradient(135deg, #9a2c52 0%, #d17d9e 100%)' }
+        : { background: 'linear-gradient(135deg, #7a1d39 0%, #a44a52 100%)' }
+
+  const getPublicDoorStyle = (day: PublicDay) => {
+    const isFilled = Boolean(day.content)
+
+    if (!isFilled) {
+      return {
+        background: 'linear-gradient(145deg, rgba(255,255,255,0.72), rgba(248, 228, 233, 0.9))',
+        color: '#7a1d39',
+        border: '1px solid rgba(122, 29, 57, 0.14)',
+        ...(calendar?.theme === 'puzzle' || calendar?.theme === 'mosaic' ? getPuzzleDayStyle(day.day_number, calendar?.duration_days ?? 1) : {}),
+      }
+    }
+
+    return {
+      ...doorStyle,
+      ...(calendar?.theme === 'puzzle' || calendar?.theme === 'mosaic' ? getPuzzleDayStyle(day.day_number, calendar?.duration_days ?? 1) : {}),
+    }
+  }
+
+  const handleBackFromPublicCalendar = () => {
+    const routeState = location.state as {
+      fromEditor?: boolean;
+      calendarId?: number;
+      returnToEditor?: boolean;
+      returnToRoute?: string;
+    } | null
+
+    const editorCalendarId = routeState?.calendarId ?? (
+      calendar && typeof calendar.id === 'number' ? calendar.id : null
+    )
+    const defaultRoute = routeState?.fromEditor || routeState?.returnToEditor ? '/admin' : '/'
+    const targetRoute = routeState?.returnToRoute ?? defaultRoute
+
+    if (routeState?.fromEditor || routeState?.returnToEditor) {
+      if (editorCalendarId && targetRoute === '/admin') {
+        navigate('/admin', {
+          replace: true,
+          state: {
+            returnToEditor: true,
+            calendarId: editorCalendarId,
+          },
+        })
+        return
+      }
+
+      if (editorCalendarId && targetRoute !== '/admin') {
+        navigate(targetRoute, {
+          replace: true,
+          state: {
+            returnToEditor: true,
+            calendarId: editorCalendarId,
+          },
+        })
+        return
+      }
+
+      navigate('/admin', { replace: true })
+      return
+    }
+
+    if (editorCalendarId) {
+      navigate(targetRoute, {
+        replace: true,
+        state: {
+          returnToEditor: true,
+          calendarId: editorCalendarId,
+        },
+      })
+      return
+    }
+
+    navigate('/', { replace: true })
+  }
+
+  const musicSrc = calendar?.background_music === 'custom'
+    ? calendar.background_music_url
+    : calendar?.background_music && calendar.background_music !== 'none'
+      ? MUSIC_PRESETS[calendar.background_music as 'classic' | 'cozy' | 'lofi']
+      : ''
+
   const fetchCalendar = async () => {
     if (!slug) return
     setIsLoading(true)
+    setNotFound(false)
     try {
       const nextCalendar = await request<PublicCalendar>(`${API_BASE}/api/public/calendars/${slug}`)
       const nextDays = await request<PublicDay[]>(`${API_BASE}/api/public/calendars/${slug}/days`)
@@ -2789,10 +3595,20 @@ function PublicCalendarPage({ language }: { language: 'es' | 'en' }) {
       setDays(nextDays)
       setLocked(false)
       setSelectedDay(null)
+      setError('')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'No se pudo cargar el calendario'
-      if (message.includes('403') || message.includes('No tienes acceso')) {
-        setLocked(true)
+      const isAccessBlocked = /403|No tienes acceso|no está publicado|Acceso protegido|Contraseña incorrecta|Introduce la contraseña/i.test(message)
+      const isMissingCalendar = /404|Calendario no encontrado|no existe|not found|No se encontró|no está disponible/i.test(message)
+
+      if (isAccessBlocked) {
+        navigate('/calendar/access', { replace: true, state: { slug } })
+        return
+      }
+
+      if (isMissingCalendar) {
+        setNotFound(true)
+        setError(message)
       } else {
         setError(message)
       }
@@ -2825,8 +3641,22 @@ function PublicCalendarPage({ language }: { language: 'es' | 'en' }) {
     return <RouteLoadingScreen language={language} />
   }
 
-  if (!calendar && !error) {
-    return <div className="calendar-public-shell"><div className="calendar-public-card"><p>{language === 'en' ? 'Loading calendar…' : 'Cargando calendario…'}</p></div></div>
+  if (notFound) {
+    return (
+      <div className="calendar-public-shell">
+        <div className="calendar-public-card text-center">
+          <p className="eyebrow">{language === 'en' ? 'Calendar not found' : 'Calendario no encontrado'}</p>
+          <h1>{language === 'en' ? 'This calendar does not exist' : 'Este calendario no existe'}</h1>
+          <p>
+            {language === 'en'
+              ? 'Please go back home and let the person who sent it know there may have been an error.'
+              : 'Pulsa para ir a inicio y avisa a la persona que te lo ha enviado si ha habido un error.'}
+          </p>
+          <Link to="/" className="btn btn-primary">{language === 'en' ? 'Go home' : 'Ir a inicio'}</Link>
+          {error ? <div className="alert alert-danger mt-3">{error}</div> : null}
+        </div>
+      </div>
+    )
   }
 
   if (locked) {
@@ -2846,29 +3676,68 @@ function PublicCalendarPage({ language }: { language: 'es' | 'en' }) {
     )
   }
 
+  if (!calendar && !error) {
+    return <div className="calendar-public-shell"><div className="calendar-public-card"><p>{language === 'en' ? 'Loading calendar…' : 'Cargando calendario…'}</p></div></div>
+  }
+
   return (
     <div className="calendar-public-shell">
-      <div className="calendar-public-card">
+      {musicSrc ? <audio autoPlay loop src={musicSrc} /> : null}
+      <div className="calendar-public-card" style={backgroundStyle}>
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
           <div>
             <p className="eyebrow">{language === 'en' ? `Calendar: ${calendar?.name ?? 'Advent'}` : `Calendario de ${calendar?.name ?? 'Advent'}`}</p>
             <h1>{calendar?.description || (language === 'en' ? 'A December full of small details' : 'Un diciembre lleno de pequeños detalles')}</h1>
           </div>
-          <Link to="/" className="btn btn-outline-primary">{language === 'en' ? 'Back' : 'Volver'}</Link>
+          <button type="button" className="btn btn-outline-primary" onClick={handleBackFromPublicCalendar}>
+            {location.state && (location.state as { fromEditor?: boolean }).fromEditor
+              ? (language === 'en' ? 'Back to editor' : 'Volver al editor')
+              : (language === 'en' ? 'Back' : 'Volver')}
+          </button>
         </div>
 
-        <div className="doors-grid">
-          {days.map((day) => (
-            <button
-              key={day.id}
-              type="button"
-              className={`door-card ${day.content ? 'unlocked' : 'locked'}`}
-              onClick={() => day.content && setSelectedDay(day)}
-            >
-              <span>{day.day_number}</span>
-              <small>{day.content ? day.title : copy.locked}</small>
-            </button>
-          ))}
+        <div className={calendar?.theme === 'puzzle' || calendar?.theme === 'mosaic' || calendar?.theme === 'custom' ? 'door-slot-grid layout-puzzle' : `doors-grid ${doorsGridClassName}`}>
+          {days.map((day) => {
+            const isPuzzleLayout = calendar?.theme === 'puzzle' || calendar?.theme === 'mosaic'
+            const isCustomLayout = calendar?.theme === 'custom'
+
+            if (isPuzzleLayout || isCustomLayout) {
+              return (
+                <div
+                  key={day.id}
+                  className={`door-slot ${day.content ? 'filled' : 'empty'}`}
+                  style={
+                    isCustomLayout
+                      ? {
+                          ...getPublicDoorStyle(day),
+                          ...getCustomLayoutStyle(day.day_number, calendar?.duration_days ?? 1, calendar?.custom_layout ?? undefined),
+                          position: 'relative',
+                          ...getMosaicScaleStyle(calendar?.mosaic_scale),
+                        }
+                      : getPublicDoorStyle(day)
+                  }
+                >
+                  <button type="button" className="door-slot-button" onClick={() => day.content && setSelectedDay(day)}>
+                    <span className="door-slot-number">{day.day_number}</span>
+                    <span className="door-slot-label">{day.content ? day.title : copy.locked}</span>
+                  </button>
+                </div>
+              )
+            }
+
+            return (
+              <button
+                key={day.id}
+                type="button"
+                className={`door-card ${day.content ? 'unlocked' : 'locked'}`}
+                style={getPublicDoorStyle(day)}
+                onClick={() => day.content && setSelectedDay(day)}
+              >
+                <span>{day.day_number}</span>
+                <small>{day.content ? day.title : copy.locked}</small>
+              </button>
+            )
+          })}
         </div>
 
         {selectedDay ? (
@@ -2940,37 +3809,17 @@ function PublicCalendarPage({ language }: { language: 'es' | 'en' }) {
 
 export default function App() {
   const location = useLocation()
-  const [routeLoading, setRouteLoading] = useState(false)
   const [language, setLanguage] = useState<'es' | 'en'>('es')
-  const previousPathRef = useRef(location.pathname)
-
-  useEffect(() => {
-    if (previousPathRef.current === location.pathname) {
-      return
-    }
-
-    previousPathRef.current = location.pathname
-    setRouteLoading(true)
-
-    const timeoutId = window.setTimeout(() => {
-      setRouteLoading(false)
-    }, 220)
-
-    return () => window.clearTimeout(timeoutId)
-  }, [location.pathname])
-
-  if (routeLoading) {
-    return <RouteLoadingScreen language={language} />
-  }
 
   return (
     <Routes>
       <Route path="/" element={<HomePage language={language} setLanguage={setLanguage} />} />
       <Route path="/admin" element={<AdminPage language={language} setLanguage={setLanguage} />} />
       <Route path="/admin/calendario/:calendarId" element={<AdminCalendarDetailPage language={language} />} />
-      <Route path="/calendar" element={<PublicEntryChooser language={language} />} />
+      <Route path="/calendar" element={<Navigate to="/calendar/access" replace />} />
       <Route path="/calendar/access" element={<CalendarAccessPage language={language} />} />
-      <Route path="/calendar/demo-publica" element={<PublicCalendarPage language={language} />} />
+      <Route path="/calendar/demo-ejemplo-publica" element={<PublicCalendarPage language={language} />} />
+      <Route path="/calendar/demo-publica" element={<Navigate to="/calendar/demo-ejemplo-publica" replace />} />
       <Route path="/calendar/:slug" element={<PublicCalendarPage language={language} />} />
     </Routes>
   )

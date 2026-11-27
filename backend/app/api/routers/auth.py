@@ -57,6 +57,7 @@ def admin_register(payload: AdminRegisterRequest, response: Response, db: Sessio
         httponly=True,
         samesite='lax',
         secure=False,
+        path='/',
     )
     if notification_sent:
         return {'message': 'Cuenta de administrador creada. Te hemos enviado un correo de confirmación.'}
@@ -82,6 +83,7 @@ def admin_login(payload: AdminLoginRequest, response: Response, db: Session = De
         httponly=True,
         samesite='lax',
         secure=False,
+        path='/',
     )
     return {'message': 'Autenticación exitosa'}
 
@@ -172,7 +174,7 @@ def admin_change_email(request: Request, payload: dict[str, str], db: Session = 
 
 @router.post('/admin/logout')
 def admin_logout(response: Response) -> dict[str, str]:
-    response.delete_cookie('admin_session', httponly=True, samesite='lax')
+    response.delete_cookie('admin_session', httponly=True, samesite='lax', path='/')
     return {'message': 'Sesión cerrada'}
 
 
@@ -247,6 +249,7 @@ def calendar_login(slug: str, payload: CalendarPasswordRequest, response: Respon
         httponly=True,
         samesite='lax',
         secure=False,
+        path='/',
     )
     return {'message': 'Acceso autorizado'}
 
@@ -255,7 +258,7 @@ def calendar_login(slug: str, payload: CalendarPasswordRequest, response: Respon
 def calendar_logout(response: Response, request: Request) -> dict[str, str]:
     for cookie_name in request.cookies:
         if cookie_name.startswith('calendar_'):
-            response.delete_cookie(cookie_name, httponly=True, samesite='lax')
+            response.delete_cookie(cookie_name, httponly=True, samesite='lax', path='/')
     return {'message': 'Sesión del calendario cerrada'}
 
 

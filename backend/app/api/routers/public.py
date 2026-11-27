@@ -18,6 +18,10 @@ class ReminderEmailRequest(BaseModel):
 
 
 def _serialize_public_calendar(calendar: Calendar) -> dict:
+    settings = {
+        item.setting_key: item.setting_value
+        for item in getattr(calendar, 'settings', [])
+    }
     return {
         'id': calendar.id,
         'name': calendar.name,
@@ -29,6 +33,14 @@ def _serialize_public_calendar(calendar: Calendar) -> dict:
         'start_date': calendar.start_date.isoformat() if calendar.start_date else None,
         'end_date': calendar.end_date.isoformat() if calendar.end_date else None,
         'is_published': calendar.is_published,
+        'calendar_background': settings.get('calendar_background', 'rojo_mate'),
+        'calendar_background_image': settings.get('calendar_background_image', ''),
+        'custom_layout': settings.get('custom_layout', ''),
+        'mosaic_scale': float(settings.get('mosaic_scale', '1')) if str(settings.get('mosaic_scale', '1')).strip() else 1,
+        'door_style': settings.get('door_style', 'red'),
+        'door_image': settings.get('door_image', ''),
+        'background_music': settings.get('background_music', 'none'),
+        'background_music_url': settings.get('background_music_url', ''),
     }
 
 
@@ -70,19 +82,45 @@ def _is_day_unlocked(calendar: Calendar, day: CalendarDay, today: datetime) -> b
     return True
 
 
+def _admin_has_preview_access(request: Request, calendar: Calendar) -> bool:
+    admin_session = request.cookies.get('admin_session')
+    if admin_session is None or not admin_session.isdigit():
+        return False
+    return calendar.admin_id is not None and calendar.admin_id == int(admin_session)
+
+
+def _is_public_without_code(calendar: Calendar) -> bool:
+    settings = {
+        item.setting_key: item.setting_value
+        for item in getattr(calendar, 'settings', [])
+    }
+    access_mode = settings.get('calendar_access_mode')
+    if access_mode == 'public_without_code':
+        return True
+    if access_mode == 'code_protected':
+        return False
+    return False
+
+
 def _has_calendar_access(request: Request, slug: str, calendar: Calendar) -> bool:
+    if _admin_has_preview_access(request, calendar):
+        return True
     if calendar.is_demo and calendar.is_published:
+        return True
+    if _is_public_without_code(calendar):
         return True
     return request.cookies.get(f'calendar_{slug}') == slug
 
 
 @router.get('/calendars/{slug}')
-def public_calendar(slug: str, db: Session = Depends(get_db)) -> dict:
+def public_calendar(slug: str, request: Request, db: Session = Depends(get_db)) -> dict:
     calendar = db.scalar(select(Calendar).where(Calendar.slug == slug))
     if calendar is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Calendario no encontrado')
-    if not calendar.is_published:
+    if not calendar.is_published and not _admin_has_preview_access(request, calendar):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Este calendario no está publicado')
+    if not _has_calendar_access(request, slug, calendar):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='No tienes acceso a este calendario')
     return _serialize_public_calendar(calendar)
 
 
@@ -91,7 +129,7 @@ def public_calendar_days(slug: str, request: Request, db: Session = Depends(get_
     calendar = db.scalar(select(Calendar).where(Calendar.slug == slug))
     if calendar is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Calendario no encontrado')
-    if not calendar.is_published:
+    if not calendar.is_published and not _admin_has_preview_access(request, calendar):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Este calendario no está publicado')
     if not _has_calendar_access(request, slug, calendar):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='No tienes acceso a este calendario')
@@ -126,7 +164,7 @@ def public_day_detail(slug: str, day_number: int, request: Request, db: Session 
     calendar = db.scalar(select(Calendar).where(Calendar.slug == slug))
     if calendar is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Calendario no encontrado')
-    if not calendar.is_published:
+    if not calendar.is_published and not _admin_has_preview_access(request, calendar):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Este calendario no está publicado')
     if not _has_calendar_access(request, slug, calendar):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='No tienes acceso a este calendario')
@@ -146,7 +184,7 @@ def open_day(slug: str, day_number: int, request: Request, db: Session = Depends
     calendar = db.scalar(select(Calendar).where(Calendar.slug == slug))
     if calendar is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Calendario no encontrado')
-    if not calendar.is_published:
+    if not calendar.is_published and not _admin_has_preview_access(request, calendar):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Este calendario no está publicado')
     if not _has_calendar_access(request, slug, calendar):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='No tienes acceso a este calendario')

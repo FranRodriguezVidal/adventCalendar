@@ -20,6 +20,8 @@ def test_admin_login_and_calendar_can_be_created() -> None:
         json={'email': 'admin@adventcalendar.local', 'password': 'admin123'},
     )
     assert response.status_code == 200
+    assert 'admin_session=' in response.headers.get('set-cookie', '')
+    assert 'Path=/' in response.headers.get('set-cookie', '')
 
     slug = f'calendario-prueba-{uuid.uuid4().hex[:8]}'
     created = client.post(
@@ -73,6 +75,152 @@ def test_public_calendar_is_exposed() -> None:
     response = client.get('/api/public/calendars/luchi-demo')
     assert response.status_code == 200
     assert response.json()['name'] == 'Luchi'
+
+
+def test_missing_access_mode_defaults_to_code_protected_even_with_blank_password() -> None:
+    isolated_client = TestClient(app)
+    email = f'admin-default-protected-{uuid.uuid4().hex[:8]}@example.com'
+    isolated_client.post('/api/auth/admin/register', json={'name': 'Admin Default', 'email': email, 'password': 'secure-pass-123'})
+    isolated_client.post('/api/auth/admin/login', json={'email': email, 'password': 'secure-pass-123'})
+
+    slug = f'calendario-por-defecto-{uuid.uuid4().hex[:8]}'
+    created = isolated_client.post(
+        '/api/calendars',
+        json={
+            'name': 'Calendario por defecto',
+            'slug': slug,
+            'description': 'Debe quedar protegido si no hay modo explícito',
+            'password': '',
+            'theme': 'romantic',
+            'palette': {'primary': '#111111'},
+            'duration_days': 7,
+            'is_published': True,
+            'is_public_without_code': False,
+        },
+    )
+    assert created.status_code == 201
+    calendar_id = created.json()['id']
+
+    isolated_client.cookies.clear()
+    response = isolated_client.get(f'/api/public/calendars/{slug}')
+    assert response.status_code == 403
+
+    isolated_client.post('/api/auth/admin/login', json={'email': email, 'password': 'secure-pass-123'})
+    updated = isolated_client.put(
+        f'/api/calendars/{calendar_id}',
+        json={
+            'name': 'Calendario por defecto',
+            'slug': slug,
+            'description': 'Debe seguir protegido',
+            'password': '',
+            'theme': 'romantic',
+            'palette': {'primary': '#111111'},
+            'duration_days': 7,
+            'is_published': True,
+            'is_public_without_code': False,
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()['is_public_without_code'] is False
+
+
+def test_code_protected_calendar_stays_protected_and_keeps_password_visible() -> None:
+    isolated_client = TestClient(app)
+    email = f'admin-code-{uuid.uuid4().hex[:8]}@example.com'
+    isolated_client.post('/api/auth/admin/register', json={'name': 'Admin Code', 'email': email, 'password': 'secure-pass-123'})
+    isolated_client.post('/api/auth/admin/login', json={'email': email, 'password': 'secure-pass-123'})
+
+    slug = f'calendario-protegido-{uuid.uuid4().hex[:8]}'
+    created = isolated_client.post(
+        '/api/calendars',
+        json={
+            'name': 'Calendario protegido',
+            'slug': slug,
+            'description': 'Debe pedir código',
+            'password': 'secret-pass-123',
+            'theme': 'romantic',
+            'palette': {'primary': '#111111'},
+            'duration_days': 7,
+            'is_published': True,
+            'is_public_without_code': False,
+        },
+    )
+    assert created.status_code == 201
+    payload = created.json()
+    assert payload['password'] == 'secret-pass-123'
+    assert payload['is_public_without_code'] is False
+
+    isolated_client.cookies.clear()
+    response = isolated_client.get(f'/api/public/calendars/{slug}')
+    assert response.status_code == 403
+
+    isolated_client.post('/api/auth/admin/login', json={'email': email, 'password': 'secure-pass-123'})
+
+    updated = isolated_client.put(
+        f"/api/calendars/{payload['id']}",
+        json={
+            'name': 'Calendario protegido',
+            'slug': slug,
+            'description': 'Debe seguir pidiendo código',
+            'password': 'secret-pass-123',
+            'theme': 'romantic',
+            'palette': {'primary': '#111111'},
+            'duration_days': 7,
+            'is_published': True,
+            'is_public_without_code': False,
+        },
+    )
+    assert updated.status_code == 200
+    updated_payload = updated.json()
+    assert updated_payload['password'] == 'secret-pass-123'
+    assert updated_payload['is_public_without_code'] is False
+
+
+def test_public_without_code_calendar_opens_without_password() -> None:
+    isolated_client = TestClient(app)
+    email = f'admin-public-{uuid.uuid4().hex[:8]}@example.com'
+    isolated_client.post('/api/auth/admin/register', json={'name': 'Admin Public', 'email': email, 'password': 'secure-pass-123'})
+    isolated_client.post('/api/auth/admin/login', json={'email': email, 'password': 'secure-pass-123'})
+
+    slug = f'calendario-publico-{uuid.uuid4().hex[:8]}'
+    created = isolated_client.post(
+        '/api/calendars',
+        json={
+            'name': 'Calendario público',
+            'slug': slug,
+            'description': 'Abierto sin contraseña',
+            'password': '',
+            'theme': 'romantic',
+            'palette': {'primary': '#111111'},
+            'duration_days': 7,
+            'is_published': True,
+            'is_public_without_code': True,
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()['is_public_without_code'] is True
+
+    calendar_id = created.json()['id']
+    isolated_client.post(
+        f'/api/calendars/{calendar_id}/days',
+        json={
+            'day_number': 1,
+            'title': 'Primero',
+            'content_type': 'message',
+            'content': 'Hola',
+            'metadata': {},
+            'is_unlocked_by_admin': True,
+        },
+    )
+
+    isolated_client.cookies.clear()
+    public_resp = isolated_client.get(f'/api/public/calendars/{slug}')
+    assert public_resp.status_code == 200
+    assert public_resp.json()['slug'] == slug
+
+    days_resp = isolated_client.get(f'/api/public/calendars/{slug}/days')
+    assert days_resp.status_code == 200
+    assert len(days_resp.json()) > 0
 
 
 def test_demo_calendar_days_are_public_without_cookie() -> None:
@@ -191,6 +339,53 @@ def test_legacy_demo_template_row_is_normalized_for_admin() -> None:
     assert demo_items[0]['name'] == 'demo-ejemplo'
     assert demo_items[0]['duration_days'] == 7
     assert demo_items[0]['is_published'] is False
+
+
+def test_calendar_slug_update_changes_public_route_and_keeps_access() -> None:
+    email = f'admin-slug-{uuid.uuid4().hex[:8]}@example.com'
+    client.post('/api/auth/admin/register', json={'name': 'Admin Slug', 'email': email, 'password': 'slug-pass-123'})
+    login = client.post('/api/auth/admin/login', json={'email': email, 'password': 'slug-pass-123'})
+    assert login.status_code == 200
+
+    original_slug = f'calendario-viejo-{uuid.uuid4().hex[:8]}'
+    created = client.post(
+        '/api/calendars',
+        json={
+            'name': 'Calendario viejo',
+            'slug': original_slug,
+            'description': 'Ruta anterior',
+            'password': 'secret-pass-123',
+            'theme': 'romantic',
+            'palette': {'primary': '#111111'},
+            'duration_days': 7,
+            'is_published': False,
+        },
+    )
+    assert created.status_code == 201
+    calendar_id = created.json()['id']
+
+    updated = client.put(
+        f'/api/calendars/{calendar_id}',
+        json={
+            'name': 'Calendario nuevo',
+            'slug': f'calendario-nuevo-{uuid.uuid4().hex[:8]}',
+            'description': 'Ruta nueva',
+            'password': 'secret-pass-123',
+            'theme': 'romantic',
+            'palette': {'primary': '#111111'},
+            'duration_days': 7,
+            'is_published': False,
+        },
+    )
+    assert updated.status_code == 200
+    next_slug = updated.json()['slug']
+
+    old_route = client.get(f'/api/public/calendars/{original_slug}')
+    assert old_route.status_code == 404
+
+    public_resp = client.get(f'/api/public/calendars/{next_slug}')
+    assert public_resp.status_code == 200
+    assert public_resp.json()['name'] == 'Calendario nuevo'
 
 
 def test_admin_can_change_password_confirming_old_password() -> None:

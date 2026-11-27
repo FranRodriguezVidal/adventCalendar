@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
 
@@ -30,6 +31,7 @@ class CalendarCreateRequest(BaseModel):
     slug: str = Field(..., min_length=2, max_length=120)
     description: str | None = None
     password: str | None = None
+    is_public_without_code: bool = False
     theme: str = 'romantic'
     palette: dict[str, Any] | None = None
     duration_days: int = Field(default=31, ge=7, le=31)
@@ -37,6 +39,14 @@ class CalendarCreateRequest(BaseModel):
     end_date: datetime | None = None
     is_published: bool = False
     is_demo: bool = False
+    calendar_background: str | None = None
+    calendar_background_image: str | None = None
+    custom_layout: str | None = None
+    mosaic_scale: float | None = None
+    door_style: str | None = None
+    door_image: str | None = None
+    background_music: str | None = None
+    background_music_url: str | None = None
 
 
 class CalendarDayCreateRequest(BaseModel):

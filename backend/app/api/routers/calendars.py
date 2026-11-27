@@ -26,6 +26,13 @@ def generate_access_code() -> str:
 
 
 def serialize_calendar(calendar: Calendar) -> dict:
+    settings = {
+        item.setting_key: item.setting_value
+        for item in getattr(calendar, 'settings', [])
+    }
+    access_mode = settings.get('calendar_access_mode')
+    if access_mode is None:
+        access_mode = 'code_protected'
     return {
         'id': calendar.id,
         'name': calendar.name,
@@ -38,6 +45,16 @@ def serialize_calendar(calendar: Calendar) -> dict:
         'end_date': calendar.end_date.isoformat() if calendar.end_date else None,
         'is_published': calendar.is_published,
         'is_demo': calendar.is_demo,
+        'password': settings.get('calendar_password', ''),
+        'is_public_without_code': access_mode == 'public_without_code',
+        'calendar_background': settings.get('calendar_background', 'rojo_mate'),
+        'calendar_background_image': settings.get('calendar_background_image', ''),
+        'custom_layout': settings.get('custom_layout', ''),
+        'mosaic_scale': float(settings.get('mosaic_scale', '1')) if str(settings.get('mosaic_scale', '1')).strip() else 1,
+        'door_style': settings.get('door_style', 'red'),
+        'door_image': settings.get('door_image', ''),
+        'background_music': settings.get('background_music', 'none'),
+        'background_music_url': settings.get('background_music_url', ''),
         'created_at': calendar.created_at.isoformat(),
         'updated_at': calendar.updated_at.isoformat(),
     }
@@ -109,6 +126,25 @@ def create_calendar(payload: CalendarCreateRequest, request: Request, db: Sessio
     db.add(calendar)
     db.commit()
     db.refresh(calendar)
+
+    public_without_code = bool(payload.is_public_without_code)
+    for key, value in (
+        ('calendar_password', access_code or ''),
+        ('calendar_access_mode', 'public_without_code' if public_without_code else 'code_protected'),
+        ('calendar_background', payload.calendar_background),
+        ('calendar_background_image', payload.calendar_background_image),
+        ('custom_layout', payload.custom_layout),
+        ('mosaic_scale', str(payload.mosaic_scale) if payload.mosaic_scale is not None else None),
+        ('door_style', payload.door_style),
+        ('door_image', payload.door_image),
+        ('background_music', payload.background_music),
+        ('background_music_url', payload.background_music_url),
+    ):
+        if value is not None:
+            db.add(CalendarSetting(calendar_id=calendar.id, setting_key=key, setting_value=value))
+
+    db.commit()
+    db.refresh(calendar)
     return serialize_calendar(calendar)
 
 
@@ -131,7 +167,16 @@ def update_calendar(calendar_id: int, payload: CalendarCreateRequest, request: R
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='El slug ya existe')
         calendar.slug = payload.slug
 
-    access_code = payload.password or generate_access_code()
+    existing_password = db.scalar(
+        select(CalendarSetting.setting_value).where(CalendarSetting.calendar_id == calendar_id, CalendarSetting.setting_key == 'calendar_password')
+    )
+    existing_access_mode = db.scalar(
+        select(CalendarSetting.setting_value).where(CalendarSetting.calendar_id == calendar_id, CalendarSetting.setting_key == 'calendar_access_mode')
+    )
+    is_public_without_code = bool(payload.is_public_without_code)
+    access_code = payload.password if payload.password and payload.password.strip() else (existing_password or generate_access_code())
+    if is_public_without_code:
+        access_code = ''
     calendar.name = payload.name
     calendar.description = payload.description
     calendar.theme = payload.theme
@@ -142,6 +187,26 @@ def update_calendar(calendar_id: int, payload: CalendarCreateRequest, request: R
     calendar.is_published = payload.is_published
     calendar.is_demo = payload.is_demo
     calendar.password_hash = hash_password(access_code)
+
+    for key, value in (
+        ('calendar_password', access_code),
+        ('calendar_access_mode', 'public_without_code' if is_public_without_code else 'code_protected'),
+        ('calendar_background', payload.calendar_background),
+        ('calendar_background_image', payload.calendar_background_image),
+        ('custom_layout', payload.custom_layout),
+        ('mosaic_scale', str(payload.mosaic_scale) if payload.mosaic_scale is not None else None),
+        ('door_style', payload.door_style),
+        ('door_image', payload.door_image),
+        ('background_music', payload.background_music),
+        ('background_music_url', payload.background_music_url),
+    ):
+        if value is None:
+            continue
+        setting = db.scalar(select(CalendarSetting).where(CalendarSetting.calendar_id == calendar_id, CalendarSetting.setting_key == key))
+        if setting is None:
+            db.add(CalendarSetting(calendar_id=calendar_id, setting_key=key, setting_value=value))
+        else:
+            setting.setting_value = value
 
     db.commit()
     db.refresh(calendar)

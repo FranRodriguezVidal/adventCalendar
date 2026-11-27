@@ -43,9 +43,31 @@ def build_demo_calendars() -> list[dict]:
     today = datetime.utcnow()
     return [
         {
+            'name': 'demo-ejemplo',
+            'slug': 'demo-ejemplo-publica',
+            'description': 'Calendario de ejemplo de acceso directo para probar la experiencia pública.',
+            'password': 'demo123',
+            'theme': 'winter',
+            'palette': {'primary': '#3f51b5', 'secondary': '#dfe8ff', 'accent': '#f5bf4f', 'background': '#f9fbff'},
+            'duration_days': 7,
+            'start_date': today - timedelta(days=1),
+            'end_date': today + timedelta(days=10),
+            'is_published': True,
+            'is_demo': True,
+            'days': [
+                {'day_number': 1, 'title': 'Bienvenida', 'content_type': 'message', 'content': 'Hoy empieza nuestro calendario público con un pequeño detalle para sonreír.', 'metadata': {'emoji': '✨'}},
+                {'day_number': 2, 'title': 'Una pista', 'content_type': 'memory', 'content': 'Cada día trae un pequeño regalo para recordarte que eres importante.', 'metadata': {'emoji': '💫'}},
+                {'day_number': 3, 'title': 'Un recuerdo', 'content_type': 'memory', 'content': 'A veces los mejores regalos son los momentos que compartes.', 'metadata': {'emoji': '📖'}},
+                {'day_number': 4, 'title': 'Una canción', 'content_type': 'song', 'content': 'Pon una canción que te haga sentir en calma.', 'metadata': {'link': 'https://example.com/demo-song'}},
+                {'day_number': 5, 'title': 'Un mensaje especial', 'content_type': 'message', 'content': 'Si ves esto, es porque el calendario ya está abierto para todo el mundo.', 'metadata': {'emoji': '💌'}},
+                {'day_number': 6, 'title': 'Reto del día', 'content_type': 'challenge', 'content': 'Haz una pausa, mira a tu alrededor y sonríe por lo que tienes.', 'metadata': {'emoji': '🌿'}},
+                {'day_number': 7, 'title': 'Cierre', 'content_type': 'message', 'content': 'Gracias por acompañarnos. Este es un calendario de prueba público.', 'metadata': {'emoji': '🎁'}},
+            ],
+        },
+        {
             'name': 'Demo pública',
             'slug': 'demo-publica',
-            'description': 'Calendario de ejemplo sin acceso por contraseña',
+            'description': 'Alias legacy para la demo pública del calendario.',
             'password': 'demo123',
             'theme': 'winter',
             'palette': {'primary': '#3f51b5', 'secondary': '#dfe8ff', 'accent': '#f5bf4f', 'background': '#f9fbff'},
@@ -270,9 +292,70 @@ def ensure_default_demo_calendars_for_admins(db: Session) -> None:
         create_default_demo_calendar_for_admin(db, admin)
 
 
+def ensure_canonical_public_demo(db: Session) -> None:
+    canonical_slug = 'demo-ejemplo-publica'
+    calendar = db.scalar(select(Calendar).where(Calendar.slug == canonical_slug))
+    if calendar is not None:
+        calendar.name = 'demo-ejemplo'
+        calendar.is_published = True
+        calendar.is_demo = True
+        calendar.password_hash = hash_password('demo123')
+        db.commit()
+        return
+
+    legacy = db.scalar(select(Calendar).where(Calendar.slug == 'demo-publica'))
+    if legacy is not None:
+        legacy.name = 'demo-ejemplo'
+        legacy.slug = canonical_slug
+        legacy.is_published = True
+        legacy.is_demo = True
+        legacy.password_hash = hash_password('demo123')
+        db.commit()
+        return
+
+    default_calendar = Calendar(
+        admin_id=None,
+        name='demo-ejemplo',
+        slug=canonical_slug,
+        description='Calendario de ejemplo de acceso directo para probar la experiencia pública.',
+        password_hash=hash_password('demo123'),
+        theme='winter',
+        palette={'primary': '#3f51b5', 'secondary': '#dfe8ff', 'accent': '#f5bf4f', 'background': '#f9fbff'},
+        duration_days=7,
+        start_date=datetime.utcnow() - timedelta(days=1),
+        end_date=datetime.utcnow() + timedelta(days=10),
+        is_published=True,
+        is_demo=True,
+    )
+    db.add(default_calendar)
+    db.commit()
+    db.refresh(default_calendar)
+
+    for day in [
+        {'day_number': 1, 'title': 'Bienvenida', 'content_type': 'message', 'content': 'Hoy empieza nuestro calendario público con un pequeño detalle para sonreír.', 'metadata': {'emoji': '✨'}},
+        {'day_number': 2, 'title': 'Una pista', 'content_type': 'memory', 'content': 'Cada día trae un pequeño regalo para recordarte que eres importante.', 'metadata': {'emoji': '💫'}},
+        {'day_number': 3, 'title': 'Un recuerdo', 'content_type': 'memory', 'content': 'A veces los mejores regalos son los momentos que compartes.', 'metadata': {'emoji': '📖'}},
+        {'day_number': 4, 'title': 'Una canción', 'content_type': 'song', 'content': 'Pon una canción que te haga sentir en calma.', 'metadata': {'link': 'https://example.com/demo-song'}},
+        {'day_number': 5, 'title': 'Un mensaje especial', 'content_type': 'message', 'content': 'Si ves esto, es porque el calendario ya está abierto para todo el mundo.', 'metadata': {'emoji': '💌'}},
+        {'day_number': 6, 'title': 'Reto del día', 'content_type': 'challenge', 'content': 'Haz una pausa, mira a tu alrededor y sonríe por lo que tienes.', 'metadata': {'emoji': '🌿'}},
+        {'day_number': 7, 'title': 'Cierre', 'content_type': 'message', 'content': 'Gracias por acompañarnos. Este es un calendario de prueba público.', 'metadata': {'emoji': '🎁'}},
+    ]:
+        db.add(CalendarDay(
+            calendar_id=default_calendar.id,
+            day_number=day['day_number'],
+            title=day['title'],
+            content_type=day['content_type'],
+            content=day['content'],
+            content_metadata=day['metadata'],
+            position=day['day_number'],
+        ))
+    db.commit()
+
+
 def seed_demo_data(db: Session) -> None:
     ensure_known_admins(db)
     ensure_default_demo_calendars_for_admins(db)
+    ensure_canonical_public_demo(db)
 
     for item in build_demo_calendars():
         existing = db.scalar(select(Calendar).where(Calendar.slug == item['slug']))

@@ -3808,7 +3808,7 @@ function PublicCalendarPage({ language }: { language: 'es' | 'en' }) {
 }
 
 export default function App() {
-  const location = useLocation()
+  //const location = useLocation()
   const [language, setLanguage] = useState<'es' | 'en'>('es')
 
   return (
